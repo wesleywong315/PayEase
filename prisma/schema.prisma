@@ -1,0 +1,339 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "sqlite"
+}
+
+enum MembershipRole {
+  COORDINATOR
+  MEMBER
+}
+
+enum MembershipStatus {
+  ACTIVE
+  LEFT
+}
+
+enum CycleStatus {
+  OPEN
+  CLOSED
+}
+
+enum RuleStatus {
+  DRAFT
+  PROPOSED
+  ACCEPTED
+}
+
+enum ExpenseStatus {
+  DRAFT
+  COMMITTED
+  CANCELLED
+}
+
+enum CapRequestStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum HardshipFundingKind {
+  RECEIVED
+  PLEDGED
+}
+
+enum CashTxType {
+  MEMBER_CONTRIBUTION
+  HARDSHIP_FUNDING_RECEIPT
+  PAYER_REIMBURSEMENT
+  MEMBER_REFUND
+}
+
+model User {
+  id          String   @id @default(cuid())
+  displayName String
+  email       String?
+  createdAt   DateTime @default(now())
+
+  memberships Membership[]
+}
+
+model Community {
+  id          String   @id @default(cuid())
+  name        String
+  description String?
+  createdAt   DateTime @default(now())
+
+  memberships     Membership[]
+  financialCycles FinancialCycle[]
+  ruleVersions    RuleVersion[]
+  expenses        Expense[]
+  auditEvents     AuditEvent[]
+  invitations     CommunityInvitation[]
+}
+
+model Membership {
+  id          String           @id @default(cuid())
+  communityId String
+  userId      String
+  role        MembershipRole
+  status      MembershipStatus @default(ACTIVE)
+  joinedAt    DateTime         @default(now())
+  leftAt      DateTime?
+
+  community Community @relation(fields: [communityId], references: [id])
+  user      User      @relation(fields: [userId], references: [id])
+
+  ruleVersionsCreated     RuleVersion[]          @relation("RuleCreatedBy")
+  ruleAcceptances         RuleAcceptance[]
+  expensesCreated         Expense[]              @relation("ExpenseCreatedBy")
+  expensesFronted         Expense[]              @relation("ExpenseFrontedBy")
+  expenseParticipations   ExpenseParticipant[]
+  allocations             Allocation[]
+  contributionCapRequests ContributionCapRequest[] @relation("CapRequester")
+  capRequestsDecided      ContributionCapRequest[] @relation("CapDecider")
+  hardshipFundingRecorded HardshipFunding[]      @relation("FundingRecorder")
+  hardshipAwardsReceived  HardshipAward[]        @relation("AwardRecipient")
+  hardshipAwardsApproved  HardshipAward[]        @relation("AwardApprover")
+  cashTransactionsAsParty CashTransaction[]      @relation("CashParty")
+  cashTransactionsRecorded CashTransaction[]     @relation("CashRecorder")
+  withdrawals             Withdrawal[]           @relation("WithdrawnMember")
+  withdrawalsExecuted     Withdrawal[]           @relation("WithdrawalExecutor")
+  auditEvents             AuditEvent[]
+  invitationsCreated      CommunityInvitation[]  @relation("InvitationCreator")
+
+  @@unique([communityId, userId])
+}
+
+model FinancialCycle {
+  id                            String      @id @default(cuid())
+  communityId                   String
+  name                          String
+  status                        CycleStatus @default(OPEN)
+  revision                      Int         @default(1)
+  closedAt                      DateTime?
+  closeAcknowledgedOutstanding  Boolean     @default(false)
+  createdAt                     DateTime    @default(now())
+
+  community               Community              @relation(fields: [communityId], references: [id])
+  ruleVersions            RuleVersion[]
+  expenses                Expense[]
+  contributionCapRequests ContributionCapRequest[]
+  hardshipFundings        HardshipFunding[]
+  hardshipAwards          HardshipAward[]
+  cashTransactions        CashTransaction[]
+  withdrawals             Withdrawal[]
+  auditEvents             AuditEvent[]
+}
+
+model RuleVersion {
+  id                               String     @id @default(cuid())
+  communityId                      String
+  cycleId                          String
+  versionNumber                    Int
+  status                           RuleStatus @default(DRAFT)
+  title                            String
+  bodyMarkdown                     String
+  equalShareFallbackWhenZeroUsage  Boolean    @default(true)
+  /// JSON array of membership IDs required to accept (snapshot at propose time)
+  requiredAcceptorIdsJson          String     @default("[]")
+  createdByMembershipId            String
+  proposedAt                       DateTime?
+  acceptedAt                       DateTime?
+  createdAt                        DateTime   @default(now())
+
+  community   Community        @relation(fields: [communityId], references: [id])
+  cycle       FinancialCycle   @relation(fields: [cycleId], references: [id])
+  createdBy   Membership       @relation("RuleCreatedBy", fields: [createdByMembershipId], references: [id])
+  acceptances RuleAcceptance[]
+  expenses    Expense[]
+
+  @@unique([cycleId, versionNumber])
+}
+
+model RuleAcceptance {
+  id            String   @id @default(cuid())
+  ruleVersionId String
+  membershipId  String
+  acceptedAt    DateTime @default(now())
+
+  ruleVersion RuleVersion @relation(fields: [ruleVersionId], references: [id])
+  membership  Membership  @relation(fields: [membershipId], references: [id])
+
+  @@unique([ruleVersionId, membershipId])
+}
+
+model Expense {
+  id                     String        @id @default(cuid())
+  communityId            String
+  cycleId                String
+  ruleVersionId          String?
+  status                 ExpenseStatus @default(DRAFT)
+  title                  String
+  category               String
+  fixedCents             Int
+  variableCents          Int
+  totalCents             Int
+  usageLabel             String
+  frontedByMembershipId  String?
+  needsRevision          Boolean       @default(false)
+  committedAt            DateTime?
+  cancelledAt            DateTime?
+  createdByMembershipId  String
+  createdAt              DateTime      @default(now())
+  updatedAt              DateTime      @updatedAt
+
+  community   Community            @relation(fields: [communityId], references: [id])
+  cycle       FinancialCycle       @relation(fields: [cycleId], references: [id])
+  ruleVersion RuleVersion?         @relation(fields: [ruleVersionId], references: [id])
+  frontedBy   Membership?          @relation("ExpenseFrontedBy", fields: [frontedByMembershipId], references: [id])
+  createdBy   Membership           @relation("ExpenseCreatedBy", fields: [createdByMembershipId], references: [id])
+  participants ExpenseParticipant[]
+  allocations Allocation[]
+  cashTransactions CashTransaction[]
+}
+
+model ExpenseParticipant {
+  id           String @id @default(cuid())
+  expenseId    String
+  membershipId String
+  usageUnits   Int    @default(0)
+
+  expense    Expense    @relation(fields: [expenseId], references: [id])
+  membership Membership @relation(fields: [membershipId], references: [id])
+
+  @@unique([expenseId, membershipId])
+}
+
+model Allocation {
+  id                   String @id @default(cuid())
+  expenseId            String
+  membershipId         String
+  fixedShareCents      Int
+  usageShareCents      Int
+  baselineCents        Int
+  hardshipAppliedCents Int    @default(0)
+  finalChargeCents     Int
+
+  expense    Expense    @relation(fields: [expenseId], references: [id])
+  membership Membership @relation(fields: [membershipId], references: [id])
+
+  @@unique([expenseId, membershipId])
+}
+
+model ContributionCapRequest {
+  id                    String           @id @default(cuid())
+  cycleId               String
+  membershipId          String
+  requestedCapCents     Int
+  explanation           String
+  status                CapRequestStatus @default(PENDING)
+  decidedByMembershipId String?
+  decidedAt             DateTime?
+  rejectionReason       String?
+  createdAt             DateTime         @default(now())
+
+  cycle       FinancialCycle @relation(fields: [cycleId], references: [id])
+  membership  Membership     @relation("CapRequester", fields: [membershipId], references: [id])
+  decidedBy   Membership?    @relation("CapDecider", fields: [decidedByMembershipId], references: [id])
+  hardshipAward HardshipAward?
+}
+
+model HardshipFunding {
+  id                     String              @id @default(cuid())
+  cycleId                String
+  kind                   HardshipFundingKind
+  amountCents            Int
+  note                   String?
+  recordedByMembershipId String
+  cashTransactionId      String?             @unique
+  createdAt              DateTime            @default(now())
+
+  cycle           FinancialCycle   @relation(fields: [cycleId], references: [id])
+  recordedBy      Membership       @relation("FundingRecorder", fields: [recordedByMembershipId], references: [id])
+  cashTransaction CashTransaction? @relation("FundingCashLink", fields: [cashTransactionId], references: [id])
+}
+
+model HardshipAward {
+  id                     String   @id @default(cuid())
+  capRequestId           String   @unique
+  cycleId                String
+  membershipId           String
+  amountCents            Int
+  approvedByMembershipId String
+  createdAt              DateTime @default(now())
+
+  capRequest ContributionCapRequest @relation(fields: [capRequestId], references: [id])
+  cycle      FinancialCycle         @relation(fields: [cycleId], references: [id])
+  membership Membership             @relation("AwardRecipient", fields: [membershipId], references: [id])
+  approvedBy Membership             @relation("AwardApprover", fields: [approvedByMembershipId], references: [id])
+}
+
+model CashTransaction {
+  id                     String     @id @default(cuid())
+  cycleId                String
+  type                   CashTxType
+  amountCents            Int
+  membershipId           String?
+  expenseId              String?
+  idempotencyKey         String
+  note                   String?
+  manuallyConfirmed      Boolean    @default(true)
+  recordedByMembershipId String
+  createdAt              DateTime   @default(now())
+
+  cycle         FinancialCycle   @relation(fields: [cycleId], references: [id])
+  membership    Membership?      @relation("CashParty", fields: [membershipId], references: [id])
+  expense       Expense?         @relation(fields: [expenseId], references: [id])
+  recordedBy    Membership       @relation("CashRecorder", fields: [recordedByMembershipId], references: [id])
+  /// Canonical RECEIVED link is HardshipFunding.cashTransactionId (no double-count).
+  linkedFunding HardshipFunding? @relation("FundingCashLink")
+
+  @@unique([cycleId, idempotencyKey])
+}
+
+model Withdrawal {
+  id                      String   @id @default(cuid())
+  cycleId                 String
+  membershipId            String
+  executedByMembershipId  String
+  previewSnapshotJson     String
+  executedAt              DateTime @default(now())
+
+  cycle      FinancialCycle @relation(fields: [cycleId], references: [id])
+  membership Membership     @relation("WithdrawnMember", fields: [membershipId], references: [id])
+  executedBy Membership     @relation("WithdrawalExecutor", fields: [executedByMembershipId], references: [id])
+}
+
+model CommunityInvitation {
+  id                    String    @id @default(cuid())
+  communityId           String
+  /// Opaque, unpredictable token used in /join/[token]
+  token                 String    @unique
+  createdByMembershipId String
+  expiresAt             DateTime
+  revokedAt             DateTime?
+  createdAt             DateTime  @default(now())
+
+  community Community  @relation(fields: [communityId], references: [id])
+  createdBy Membership @relation("InvitationCreator", fields: [createdByMembershipId], references: [id])
+}
+
+model AuditEvent {
+  id                String   @id @default(cuid())
+  communityId       String
+  cycleId           String?
+  actorMembershipId String?
+  action            String
+  entityType        String
+  entityId          String
+  payloadJson       String   @default("{}")
+  createdAt         DateTime @default(now())
+
+  community Community       @relation(fields: [communityId], references: [id])
+  cycle     FinancialCycle? @relation(fields: [cycleId], references: [id])
+  actor     Membership?     @relation(fields: [actorMembershipId], references: [id])
+}

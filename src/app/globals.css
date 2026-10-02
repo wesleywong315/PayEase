@@ -1,26 +1,129 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  /* Brand palette */
+  --color-ink: #103b2f;
+  --color-primary: #1f5a45;
+  --color-accent-mid: #3f8068;
+  --color-canvas: #f3efe6;
+  --color-warm: #b88a5a;
+  --color-landing: #2b5a43;
+
+  /* Surfaces / borders derived from palette */
+  --color-surface: #fffcf7;
+  --color-surface-muted: color-mix(in srgb, var(--color-canvas) 88%, var(--color-ink));
+  --color-border: color-mix(in srgb, var(--color-ink) 14%, var(--color-canvas));
+  --color-muted: color-mix(in srgb, var(--color-ink) 62%, var(--color-canvas));
+
+  /* Narrow semantic colors (always pair with text + icon) */
+  --color-danger: #9b2c2c;
+  --color-danger-bg: #fde8e8;
+  --color-warning: #8a5a12;
+  --color-warning-bg: #fff4df;
+  --color-success: #1f5a45;
+  --color-success-bg: color-mix(in srgb, var(--color-accent-mid) 18%, white);
+
+  --background: var(--color-canvas);
+  --foreground: var(--color-ink);
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+  --color-ink: var(--color-ink);
+  --color-primary: var(--color-primary);
+  --color-accent: var(--color-primary);
+  --color-accent-mid: var(--color-accent-mid);
+  --color-canvas: var(--color-canvas);
+  --color-warm: var(--color-warm);
+  --color-landing: var(--color-landing);
+  --color-surface: var(--color-surface);
+  --color-surface-muted: var(--color-surface-muted);
+  --color-border: var(--color-border);
+  --color-muted: var(--color-muted);
+  --color-danger: var(--color-danger);
+  --color-danger-bg: var(--color-danger-bg);
+  --color-warning: var(--color-warning);
+  --color-warning-bg: var(--color-warning-bg);
+  --color-success: var(--color-success);
+  --color-success-bg: var(--color-success-bg);
+  --font-sans: var(--font-inter);
+  --font-mono: var(--font-jetbrains);
+  --font-display: var(--font-inter);
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-inter), "Inter", "Segoe UI", sans-serif;
+  font-size: 15px;
+  line-height: 1.5;
+  font-weight: 400;
+}
+
+.type-h1 {
+  font-size: clamp(1.75rem, 4vw, 2.5rem);
+  font-weight: 700;
+  line-height: 1.2;
+  letter-spacing: -0.02em;
+  color: var(--color-ink);
+}
+
+.type-h2 {
+  font-size: clamp(1.35rem, 2.5vw, 1.75rem);
+  font-weight: 600;
+  line-height: 1.3;
+  color: var(--color-ink);
+}
+
+.type-h3 {
+  font-size: clamp(1.125rem, 1.5vw, 1.25rem);
+  font-weight: 500;
+  line-height: 1.4;
+  color: var(--color-ink);
+}
+
+.type-body {
+  font-size: 0.9375rem;
+  font-weight: 400;
+  line-height: 1.5;
+}
+
+.type-caption {
+  font-size: 0.75rem;
+  font-weight: 400;
+  line-height: 1.4;
+  color: var(--color-muted);
+}
+
+.type-money {
+  font-family: var(--font-jetbrains), "JetBrains Mono", ui-monospace, monospace;
+  font-size: 0.9375rem;
+  font-weight: 500;
+  line-height: 1.4;
+  font-variant-numeric: tabular-nums;
+}
+
+.type-money-lg {
+  font-family: var(--font-jetbrains), "JetBrains Mono", ui-monospace, monospace;
+  font-size: clamp(1.25rem, 2vw, 1.75rem);
+  font-weight: 600;
+  line-height: 1.2;
+  font-variant-numeric: tabular-nums;
+}
+
+.focus-ring {
+  outline: none;
+}
+
+.focus-ring:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}
+
+.card-surface {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 1rem;
+  box-shadow: 0 1px 2px color-mix(in srgb, var(--color-ink) 6%, transparent);
 }
