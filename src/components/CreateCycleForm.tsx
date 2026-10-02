@@ -2,14 +2,22 @@
 
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
+import { ErrorAlert } from "@/components/ErrorAlert";
 
 type CreateCycleFormProps = {
   communityId: string;
 };
 
+function defaultEndDate(): string {
+  const d = new Date();
+  d.setMonth(d.getMonth() + 3);
+  return d.toISOString().slice(0, 10);
+}
+
 export function CreateCycleForm({ communityId }: CreateCycleFormProps) {
   const router = useRouter();
   const [name, setName] = useState("Autumn 2026");
+  const [endsAt, setEndsAt] = useState(defaultEndDate);
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
 
@@ -25,7 +33,7 @@ export function CreateCycleForm({ communityId }: CreateCycleFormProps) {
             {
               method: "POST",
               headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ name }),
+              body: JSON.stringify({ name, endsAt }),
             },
           );
           const data = (await response.json()) as {
@@ -39,10 +47,10 @@ export function CreateCycleForm({ communityId }: CreateCycleFormProps) {
         });
       }}
     >
-      <h2 className="type-h3">Create a financial cycle</h2>
+      <h2 className="type-h3">Open a financial cycle</h2>
       <p className="type-caption">
-        Expenses and allocations require an open cycle. Dates and commitments are
-        not assumed for you.
+        Set a clear end date. Expenses and settlements for this community run
+        inside this cycle until it closes.
       </p>
       <label htmlFor="cycle-name" className="type-caption font-semibold text-ink">
         Cycle name
@@ -56,18 +64,24 @@ export function CreateCycleForm({ communityId }: CreateCycleFormProps) {
         onChange={(e) => setName(e.target.value)}
         className="focus-ring w-full rounded-xl border border-border bg-surface px-4 py-3 text-sm"
       />
-      {error ? (
-        <p role="alert" className="flex gap-2 text-sm text-danger">
-          <span aria-hidden="true">!</span>
-          <span>{error}</span>
-        </p>
-      ) : null}
+      <label htmlFor="cycle-ends" className="type-caption font-semibold text-ink">
+        Cycle end date
+      </label>
+      <input
+        id="cycle-ends"
+        type="date"
+        required
+        value={endsAt}
+        onChange={(e) => setEndsAt(e.target.value)}
+        className="focus-ring w-full rounded-xl border border-border bg-surface px-4 py-3 text-sm sm:max-w-xs"
+      />
+      {error ? <ErrorAlert message={error} /> : null}
       <button
         type="submit"
         disabled={pending}
         className="focus-ring rounded-full bg-primary px-4 py-2 text-sm font-semibold text-white disabled:opacity-60"
       >
-        {pending ? "Creating…" : "Create open cycle"}
+        {pending ? "Opening…" : "Open cycle"}
       </button>
     </form>
   );

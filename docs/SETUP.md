@@ -1,6 +1,6 @@
-# TeamFair setup guide
+# PayEase setup guide
 
-This guide covers the local development foundation for TeamFair.
+This guide covers **local development** (SQLite). For shared hosting later, see [DEPLOY.md](DEPLOY.md).
 
 ## Required tooling
 
@@ -14,8 +14,6 @@ Check your versions:
 node -v
 npm -v
 ```
-
-This project was verified with Node.js `v24.19.0` and npm `11.17.0`.
 
 Do **not** mix package managers. Use npm only.
 
@@ -43,13 +41,23 @@ Native modules such as `better-sqlite3` need their install scripts allowed. If n
 cp .env.example .env
 ```
 
-`.env.example` contains a safe local SQLite URL:
+`.env.example` defaults to local SQLite:
 
 ```env
 DATABASE_URL="file:./prisma/dev.db"
+SESSION_SECRET="payease-local-dev-session-secret"
 ```
 
+Leave Supabase `DATABASE_URL` / `DIRECT_URL` commented until cutover ([DEPLOY.md](DEPLOY.md)).
+
 Do not commit your real `.env`. Do not put private configuration in `NEXT_PUBLIC_*` variables.
+
+Confirm the adapter selection:
+
+```bash
+npm run db:provider
+# → sqlite
+```
 
 ## Generate the Prisma Client
 
@@ -65,8 +73,6 @@ This writes the client to `src/generated/prisma` (gitignored). Re-run after sche
 npm run db:migrate
 ```
 
-For the first migration on a fresh clone, Prisma may prompt for a migration name if none exist yet. After migrations are committed, the same command applies them to your local database.
-
 Non-interactive alternative when creating a named migration:
 
 ```bash
@@ -79,12 +85,7 @@ npx prisma migrate dev --name <migration_name>
 npm run db:seed
 ```
 
-The seed is idempotent. It upserts exactly one demo community:
-
-- ID: `demo-community-hku-hall-football`
-- Name: `HKU Hall Football Team`
-
-Running the seed again will not create duplicates.
+The seed is idempotent (stable demo IDs). It works with SQLite now and with Postgres after cutover (same script via `createPrismaClient()`).
 
 ## Start the development server
 
@@ -96,7 +97,7 @@ Then open the local address printed in the terminal (usually `http://localhost:3
 
 Verify:
 
-- Home page shows **TeamFair** and the seeded community name from the database
+- Home page shows **PayEase**
 - `http://localhost:3000/api/health` returns HTTP 200 with `"database": "connected"`
 
 ## Run tests
@@ -105,8 +106,6 @@ Verify:
 npm run test
 ```
 
-Current coverage includes environment validation (for example, rejecting an empty `DATABASE_URL`).
-
 ## Lint and typecheck
 
 ```bash
@@ -114,18 +113,16 @@ npm run lint
 npm run typecheck
 ```
 
-TypeScript checking covers application code, Prisma config, and the seed script.
-
-## Production build
+## Production build (local)
 
 ```bash
 npm run build
 npm run start
 ```
 
-`build` runs `prisma generate` then `next build`.
+Railway uses `npm run start:prod` (migrate deploy on Postgres, then `next start`). See [DEPLOY.md](DEPLOY.md).
 
-## Teammate setup checklist
+## Teammate setup checklist (local)
 
 1. Clone the repository.
 2. `cd` into the project root.
@@ -137,12 +134,12 @@ npm run start
 8. Start the app: `npm run dev`.
 9. Optionally run `npm run test`, `npm run lint`, and `npm run typecheck`.
 
-Each teammate should use their own local SQLite file. Never commit `prisma/dev.db` or related journal/WAL files.
+Each teammate should use their own local SQLite file until the team cuts over to Supabase. Never commit `prisma/dev.db`.
 
 ## Stack notes
 
 - Next.js App Router with Route Handlers (`src/app/api/...`)
-- Prisma ORM **7.10** with SQLite via `@prisma/adapter-better-sqlite3`
+- Prisma ORM **7.10** — SQLite via `@prisma/adapter-better-sqlite3` locally; Postgres via `@prisma/adapter-pg` when `DATABASE_URL` is `postgresql://…`
 - Prisma CLI config lives in `prisma.config.ts`
-- Zod validates environment/configuration for upcoming API work
+- Zod validates environment configuration
 - Vitest runs unit tests under `src/tests/`

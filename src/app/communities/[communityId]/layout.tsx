@@ -19,13 +19,13 @@ export default async function CommunityLayout({ children, params }: LayoutProps)
     : null;
 
   return (
-    <div className="min-h-[calc(100vh-2.5rem)]">
+    <div className="min-h-[calc(100vh-2.5rem)] pb-[calc(4.25rem+env(safe-area-inset-bottom,0px))]">
       <CommunityNav
         communityId={community.id}
         communityName={community.name}
         role={membership?.role ?? null}
       />
-      <div className="mx-auto max-w-5xl px-4 py-8 sm:px-6">{children}</div>
+      <div className="mx-auto max-w-5xl px-4 py-6 sm:px-6 sm:py-8">{children}</div>
     </div>
   );
 }

@@ -5,51 +5,68 @@ vi.mock("@/lib/db", () => {
   const membershipStore = new Map<string, Record<string, unknown>>();
   const inviteStore = new Map<string, Record<string, unknown>>();
 
+  const tx = {
+    communityInvitation: {
+      findUnique: async ({ where }: { where: { token: string } }) =>
+        inviteStore.get(where.token) ?? null,
+    },
+    membership: {
+      findUnique: async ({
+        where,
+      }: {
+        where: { communityId_userId: { communityId: string; userId: string } };
+      }) => {
+        const key = `${where.communityId_userId.communityId}:${where.communityId_userId.userId}`;
+        return membershipStore.get(key) ?? null;
+      },
+      create: async ({ data }: { data: Record<string, unknown> }) => {
+        const row = { id: `mem_${randomBytes(4).toString("hex")}`, ...data };
+        membershipStore.set(`${data.communityId}:${data.userId}`, row);
+        return row;
+      },
+      update: async ({
+        where,
+        data,
+      }: {
+        where: { id: string };
+        data: Record<string, unknown>;
+      }) => {
+        for (const [key, value] of membershipStore) {
+          if (value.id === where.id) {
+            const next = { ...value, ...data };
+            membershipStore.set(key, next);
+            return next;
+          }
+        }
+        throw new Error("membership missing");
+      },
+    },
+    financialCycle: {
+      findFirst: async () => null,
+    },
+    ruleVersion: {
+      findFirst: async () => null,
+    },
+    ruleAcceptance: {
+      upsert: async () => ({}),
+    },
+    auditEvent: {
+      create: async () => ({}),
+    },
+  };
+
   return {
     prisma: {
-      $transaction: async (fn: (tx: unknown) => Promise<unknown>) => fn({
-        communityInvitation: {
-          findUnique: async ({ where }: { where: { token: string } }) =>
-            inviteStore.get(where.token) ?? null,
-        },
-        membership: {
-          findUnique: async ({
-            where,
-          }: {
-            where: { communityId_userId: { communityId: string; userId: string } };
-          }) => {
-            const key = `${where.communityId_userId.communityId}:${where.communityId_userId.userId}`;
-            return membershipStore.get(key) ?? null;
-          },
-          create: async ({ data }: { data: Record<string, unknown> }) => {
-            const row = { id: `mem_${randomBytes(4).toString("hex")}`, ...data };
-            membershipStore.set(`${data.communityId}:${data.userId}`, row);
-            return row;
-          },
-          update: async ({
-            where,
-            data,
-          }: {
-            where: { id: string };
-            data: Record<string, unknown>;
-          }) => {
-            for (const [key, value] of membershipStore) {
-              if (value.id === where.id) {
-                const next = { ...value, ...data };
-                membershipStore.set(key, next);
-                return next;
-              }
-            }
-            throw new Error("membership missing");
-          },
-        },
-        auditEvent: {
-          create: async () => ({}),
-        },
-      }),
+      $transaction: async (fn: (tx: unknown) => Promise<unknown>) => fn(tx),
       communityInvitation: {
         findUnique: async ({ where }: { where: { token: string } }) =>
           inviteStore.get(where.token) ?? null,
+      },
+      financialCycle: {
+        findFirst: async () => null,
+      },
+      ruleVersion: {
+        findFirst: async () => null,
       },
       __stores: { membershipStore, inviteStore },
     },

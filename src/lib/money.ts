@@ -37,3 +37,20 @@ export function formatHkdFromCentsSigned(cents: number): string {
   }
   return formatHkdFromCents(cents);
 }
+
+/**
+ * Parse a HKD dollar string (e.g. "12.5") into integer cents.
+ * Returns null when the input is empty or not a valid money amount.
+ */
+export function parseHkdToCents(raw: string): number | null {
+  const trimmed = raw.trim();
+  if (!trimmed) return null;
+  if (!/^\d+(\.\d{0,2})?$/.test(trimmed)) return null;
+  const [dollarsPart, centsPart = ""] = trimmed.split(".");
+  const dollars = Number(dollarsPart);
+  if (!Number.isSafeInteger(dollars) || dollars < 0) return null;
+  const centsDigits = centsPart.padEnd(2, "0").slice(0, 2);
+  const cents = centsDigits === "" ? 0 : Number(centsDigits);
+  if (!Number.isSafeInteger(cents) || cents < 0 || cents > 99) return null;
+  return dollars * 100 + cents;
+}

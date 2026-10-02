@@ -1,52 +1,48 @@
 @import "tailwindcss";
 
 :root {
-  /* Brand palette */
-  --color-ink: #103b2f;
-  --color-primary: #1f5a45;
-  --color-accent-mid: #3f8068;
-  --color-canvas: #f3efe6;
-  --color-warm: #b88a5a;
-  --color-landing: #2b5a43;
+  /* Brand palette (raw tokens — avoid circular refs with @theme) */
+  --payease-ink: #103b2f;
+  --payease-primary: #1f5a45;
+  --payease-accent-mid: #3f8068;
+  --payease-canvas: #f3efe6;
+  --payease-warm: #b88a5a;
+  --payease-landing: #2b5a43;
+  --payease-surface: #fffcf7;
+  --payease-surface-muted: color-mix(in srgb, var(--payease-canvas) 88%, var(--payease-ink));
+  --payease-border: color-mix(in srgb, var(--payease-ink) 14%, var(--payease-canvas));
+  --payease-muted: color-mix(in srgb, var(--payease-ink) 62%, var(--payease-canvas));
+  --payease-danger: #9b2c2c;
+  --payease-danger-bg: #fde8e8;
+  --payease-warning: #8a5a12;
+  --payease-warning-bg: #fff4df;
+  --payease-success: #1f5a45;
+  --payease-success-bg: color-mix(in srgb, var(--payease-accent-mid) 18%, white);
 
-  /* Surfaces / borders derived from palette */
-  --color-surface: #fffcf7;
-  --color-surface-muted: color-mix(in srgb, var(--color-canvas) 88%, var(--color-ink));
-  --color-border: color-mix(in srgb, var(--color-ink) 14%, var(--color-canvas));
-  --color-muted: color-mix(in srgb, var(--color-ink) 62%, var(--color-canvas));
-
-  /* Narrow semantic colors (always pair with text + icon) */
-  --color-danger: #9b2c2c;
-  --color-danger-bg: #fde8e8;
-  --color-warning: #8a5a12;
-  --color-warning-bg: #fff4df;
-  --color-success: #1f5a45;
-  --color-success-bg: color-mix(in srgb, var(--color-accent-mid) 18%, white);
-
-  --background: var(--color-canvas);
-  --foreground: var(--color-ink);
+  --background: var(--payease-canvas);
+  --foreground: var(--payease-ink);
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --color-ink: var(--color-ink);
-  --color-primary: var(--color-primary);
-  --color-accent: var(--color-primary);
-  --color-accent-mid: var(--color-accent-mid);
-  --color-canvas: var(--color-canvas);
-  --color-warm: var(--color-warm);
-  --color-landing: var(--color-landing);
-  --color-surface: var(--color-surface);
-  --color-surface-muted: var(--color-surface-muted);
-  --color-border: var(--color-border);
-  --color-muted: var(--color-muted);
-  --color-danger: var(--color-danger);
-  --color-danger-bg: var(--color-danger-bg);
-  --color-warning: var(--color-warning);
-  --color-warning-bg: var(--color-warning-bg);
-  --color-success: var(--color-success);
-  --color-success-bg: var(--color-success-bg);
+  --color-ink: var(--payease-ink);
+  --color-primary: var(--payease-primary);
+  --color-accent: var(--payease-primary);
+  --color-accent-mid: var(--payease-accent-mid);
+  --color-canvas: var(--payease-canvas);
+  --color-warm: var(--payease-warm);
+  --color-landing: var(--payease-landing);
+  --color-surface: var(--payease-surface);
+  --color-surface-muted: var(--payease-surface-muted);
+  --color-border: var(--payease-border);
+  --color-muted: var(--payease-muted);
+  --color-danger: var(--payease-danger);
+  --color-danger-bg: var(--payease-danger-bg);
+  --color-warning: var(--payease-warning);
+  --color-warning-bg: var(--payease-warning-bg);
+  --color-success: var(--payease-success);
+  --color-success-bg: var(--payease-success-bg);
   --font-sans: var(--font-inter);
   --font-mono: var(--font-jetbrains);
   --font-display: var(--font-inter);
@@ -61,69 +57,72 @@ body {
   font-weight: 400;
 }
 
-.type-h1 {
-  font-size: clamp(1.75rem, 4vw, 2.5rem);
-  font-weight: 700;
-  line-height: 1.2;
-  letter-spacing: -0.02em;
-  color: var(--color-ink);
-}
+/* Component layer so Tailwind text-* / bg-* utilities can override defaults. */
+@layer components {
+  .type-h1 {
+    font-size: clamp(1.75rem, 4vw, 2.5rem);
+    font-weight: 700;
+    line-height: 1.2;
+    letter-spacing: -0.02em;
+    color: var(--payease-ink);
+  }
 
-.type-h2 {
-  font-size: clamp(1.35rem, 2.5vw, 1.75rem);
-  font-weight: 600;
-  line-height: 1.3;
-  color: var(--color-ink);
-}
+  .type-h2 {
+    font-size: clamp(1.35rem, 2.5vw, 1.75rem);
+    font-weight: 600;
+    line-height: 1.3;
+    color: var(--payease-ink);
+  }
 
-.type-h3 {
-  font-size: clamp(1.125rem, 1.5vw, 1.25rem);
-  font-weight: 500;
-  line-height: 1.4;
-  color: var(--color-ink);
-}
+  .type-h3 {
+    font-size: clamp(1.125rem, 1.5vw, 1.25rem);
+    font-weight: 500;
+    line-height: 1.4;
+    color: var(--payease-ink);
+  }
 
-.type-body {
-  font-size: 0.9375rem;
-  font-weight: 400;
-  line-height: 1.5;
-}
+  .type-body {
+    font-size: 0.9375rem;
+    font-weight: 400;
+    line-height: 1.5;
+  }
 
-.type-caption {
-  font-size: 0.75rem;
-  font-weight: 400;
-  line-height: 1.4;
-  color: var(--color-muted);
-}
+  .type-caption {
+    font-size: 0.75rem;
+    font-weight: 400;
+    line-height: 1.4;
+    color: var(--payease-muted);
+  }
 
-.type-money {
-  font-family: var(--font-jetbrains), "JetBrains Mono", ui-monospace, monospace;
-  font-size: 0.9375rem;
-  font-weight: 500;
-  line-height: 1.4;
-  font-variant-numeric: tabular-nums;
-}
+  .type-money {
+    font-family: var(--font-jetbrains), "JetBrains Mono", ui-monospace, monospace;
+    font-size: 0.9375rem;
+    font-weight: 500;
+    line-height: 1.4;
+    font-variant-numeric: tabular-nums;
+  }
 
-.type-money-lg {
-  font-family: var(--font-jetbrains), "JetBrains Mono", ui-monospace, monospace;
-  font-size: clamp(1.25rem, 2vw, 1.75rem);
-  font-weight: 600;
-  line-height: 1.2;
-  font-variant-numeric: tabular-nums;
-}
+  .type-money-lg {
+    font-family: var(--font-jetbrains), "JetBrains Mono", ui-monospace, monospace;
+    font-size: clamp(1.25rem, 2vw, 1.75rem);
+    font-weight: 600;
+    line-height: 1.2;
+    font-variant-numeric: tabular-nums;
+  }
 
-.focus-ring {
-  outline: none;
-}
+  .focus-ring {
+    outline: none;
+  }
 
-.focus-ring:focus-visible {
-  outline: 2px solid var(--color-primary);
-  outline-offset: 2px;
-}
+  .focus-ring:focus-visible {
+    outline: 2px solid var(--payease-primary);
+    outline-offset: 2px;
+  }
 
-.card-surface {
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  border-radius: 1rem;
-  box-shadow: 0 1px 2px color-mix(in srgb, var(--color-ink) 6%, transparent);
+  .card-surface {
+    background: var(--payease-surface);
+    border: 1px solid var(--payease-border);
+    border-radius: 1rem;
+    box-shadow: 0 1px 2px color-mix(in srgb, var(--payease-ink) 6%, transparent);
+  }
 }

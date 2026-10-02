@@ -15,7 +15,7 @@ export function LogoutButton({ className = "" }: { className?: string }) {
       onClick={() => {
         startTransition(async () => {
           await fetch("/api/session", { method: "DELETE" });
-          router.replace("/login");
+          router.replace("/");
           router.refresh();
         });
       }}

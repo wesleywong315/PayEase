@@ -1,3 +1,5 @@
+import { getSessionSecret as resolveSessionSecret } from "@/lib/env";
+
 const SESSION_TTL_SECONDS = 60 * 60 * 24 * 14; // 14 days
 export const SESSION_COOKIE = "payease_session";
 
@@ -7,12 +9,7 @@ export type SessionPayload = {
 };
 
 function getSessionSecret(): string {
-  const secret = process.env.SESSION_SECRET;
-  if (secret && secret.length >= 16) {
-    return secret;
-  }
-  // Demo fallback — documented in .env.example; not production-safe.
-  return "payease-demo-session-secret";
+  return resolveSessionSecret();
 }
 
 function bytesToBase64Url(bytes: ArrayBuffer | Uint8Array): string {

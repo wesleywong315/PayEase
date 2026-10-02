@@ -3,7 +3,6 @@
  * Stable IDs keep rounding tie-breaks reproducible across re-seeds.
  */
 import "dotenv/config";
-import { PrismaBetterSqlite3 } from "@prisma/adapter-better-sqlite3";
 import {
   CapRequestStatus,
   CashTxType,
@@ -12,11 +11,10 @@ import {
   HardshipFundingKind,
   MembershipRole,
   MembershipStatus,
-  PrismaClient,
   RuleStatus,
 } from "../src/generated/prisma/client";
-import { resolveSqliteUrl } from "../src/lib/db";
-import { getDatabaseUrl } from "../src/lib/env";
+import { createPrismaClient } from "../src/lib/db";
+import { DEMO_PASSWORD, hashPassword } from "../src/lib/password";
 import { DEMO, EXTRA_DEMO_COMMUNITIES } from "./demo-ids";
 
 const RULE_BODY = `PayEase demo rule v1 for Autumn 2026.
@@ -29,10 +27,7 @@ const RULE_BODY = `PayEase demo rule v1 for Autumn 2026.
 `;
 
 async function main() {
-  const adapter = new PrismaBetterSqlite3({
-    url: resolveSqliteUrl(getDatabaseUrl()),
-  });
-  const prisma = new PrismaClient({ adapter });
+  const prisma = createPrismaClient();
 
   try {
     await prisma.$transaction(async (tx) => {
@@ -45,14 +40,23 @@ async function main() {
         },
       });
 
+      const demoPasswordHash = hashPassword(DEMO_PASSWORD);
+
       for (const user of Object.values(DEMO.users)) {
         await tx.user.upsert({
           where: { id: user.id },
-          update: { displayName: user.displayName, email: user.email },
+          update: {
+            displayName: user.displayName,
+            email: user.email,
+            username: user.username,
+            passwordHash: demoPasswordHash,
+          },
           create: {
             id: user.id,
             displayName: user.displayName,
             email: user.email,
+            username: user.username,
+            passwordHash: demoPasswordHash,
           },
         });
       }
@@ -106,6 +110,7 @@ async function main() {
           communityId: DEMO.communityId,
           name: DEMO.cycleName,
           status: CycleStatus.OPEN,
+          endsAt: new Date("2026-12-31T23:59:59.000Z"),
           closedAt: null,
           closeAcknowledgedOutstanding: false,
         },
@@ -114,6 +119,7 @@ async function main() {
           communityId: DEMO.communityId,
           name: DEMO.cycleName,
           status: CycleStatus.OPEN,
+          endsAt: new Date("2026-12-31T23:59:59.000Z"),
           revision: 1,
         },
       });
@@ -138,6 +144,12 @@ async function main() {
           title: "Autumn 2026 shared spending rule",
           bodyMarkdown: RULE_BODY,
           equalShareFallbackWhenZeroUsage: true,
+          featureTogglesJson: JSON.stringify({
+            hardshipEnabled: true,
+            withdrawalsEnabled: true,
+            contributionsEnabled: true,
+          }),
+          cycleBudgetCapCents: null,
           requiredAcceptorIdsJson: JSON.stringify(acceptorIds),
           createdByMembershipId: DEMO.memberships.alex,
           proposedAt,
@@ -152,6 +164,12 @@ async function main() {
           title: "Autumn 2026 shared spending rule",
           bodyMarkdown: RULE_BODY,
           equalShareFallbackWhenZeroUsage: true,
+          featureTogglesJson: JSON.stringify({
+            hardshipEnabled: true,
+            withdrawalsEnabled: true,
+            contributionsEnabled: true,
+          }),
+          cycleBudgetCapCents: null,
           requiredAcceptorIdsJson: JSON.stringify(acceptorIds),
           createdByMembershipId: DEMO.memberships.alex,
           proposedAt,
@@ -177,6 +195,26 @@ async function main() {
         });
       }
 
+      for (const cat of [
+        { id: "cat_training", name: "Training" },
+        { id: "cat_transport", name: "Transport" },
+        { id: "cat_equipment", name: "Equipment" },
+      ] as const) {
+        await tx.category.upsert({
+          where: { id: cat.id },
+          update: {
+            communityId: DEMO.communityId,
+            name: cat.name,
+            archivedAt: null,
+          },
+          create: {
+            id: cat.id,
+            communityId: DEMO.communityId,
+            name: cat.name,
+          },
+        });
+      }
+
       const committedAt = new Date("2026-09-10T00:00:00.000Z");
 
       await tx.expense.upsert({
@@ -188,10 +226,13 @@ async function main() {
           status: ExpenseStatus.COMMITTED,
           title: "Season training package",
           category: "Training",
+          categoryId: "cat_training",
           fixedCents: DEMO.trainingFixedCents,
           variableCents: DEMO.trainingVariableCents,
           totalCents: DEMO.trainingTotalCents,
           usageLabel: "Sessions attended",
+          dueAt: new Date("2026-10-05T23:59:59.000Z"),
+          isOneTimeCategory: false,
           frontedByMembershipId: DEMO.memberships.alex,
           needsRevision: false,
           committedAt,
@@ -206,10 +247,13 @@ async function main() {
           status: ExpenseStatus.COMMITTED,
           title: "Season training package",
           category: "Training",
+          categoryId: "cat_training",
           fixedCents: DEMO.trainingFixedCents,
           variableCents: DEMO.trainingVariableCents,
           totalCents: DEMO.trainingTotalCents,
           usageLabel: "Sessions attended",
+          dueAt: new Date("2026-10-05T23:59:59.000Z"),
+          isOneTimeCategory: false,
           frontedByMembershipId: DEMO.memberships.alex,
           needsRevision: false,
           committedAt,
@@ -306,10 +350,13 @@ async function main() {
           status: ExpenseStatus.DRAFT,
           title: "Upcoming friendly-match transport",
           category: "Transport",
+          categoryId: "cat_transport",
           fixedCents: DEMO.transportFixedCents,
           variableCents: 0,
           totalCents: DEMO.transportFixedCents,
           usageLabel: "Seats reserved",
+          dueAt: new Date("2026-10-20T23:59:59.000Z"),
+          isOneTimeCategory: false,
           frontedByMembershipId: null,
           needsRevision: false,
           committedAt: null,
@@ -324,10 +371,13 @@ async function main() {
           status: ExpenseStatus.DRAFT,
           title: "Upcoming friendly-match transport",
           category: "Transport",
+          categoryId: "cat_transport",
           fixedCents: DEMO.transportFixedCents,
           variableCents: 0,
           totalCents: DEMO.transportFixedCents,
           usageLabel: "Seats reserved",
+          dueAt: new Date("2026-10-20T23:59:59.000Z"),
+          isOneTimeCategory: false,
           createdByMembershipId: DEMO.memberships.alex,
         },
       });
@@ -476,12 +526,14 @@ async function main() {
           communityId: vb.id,
           name: vb.cycleName,
           status: CycleStatus.OPEN,
+          endsAt: new Date("2026-12-31T23:59:59.000Z"),
         },
         create: {
           id: vb.cycleId,
           communityId: vb.id,
           name: vb.cycleName,
           status: CycleStatus.OPEN,
+          endsAt: new Date("2026-12-31T23:59:59.000Z"),
           revision: 1,
         },
       });
@@ -532,12 +584,14 @@ async function main() {
           communityId: swim.id,
           name: swim.cycleName,
           status: CycleStatus.OPEN,
+          endsAt: new Date("2026-12-31T23:59:59.000Z"),
         },
         create: {
           id: swim.cycleId,
           communityId: swim.id,
           name: swim.cycleName,
           status: CycleStatus.OPEN,
+          endsAt: new Date("2026-12-31T23:59:59.000Z"),
           revision: 1,
         },
       });

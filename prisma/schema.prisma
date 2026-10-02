@@ -48,15 +48,31 @@ enum HardshipFundingKind {
 enum CashTxType {
   MEMBER_CONTRIBUTION
   HARDSHIP_FUNDING_RECEIPT
+  CREDIT_RECEIPT
   PAYER_REIMBURSEMENT
   MEMBER_REFUND
 }
 
+enum PaymentSubmissionStatus {
+  PENDING_CONFIRMATION
+  CONFIRMED
+  REJECTED
+}
+
+enum NotificationKind {
+  PAYMENT_SUBMITTED
+  PAYMENT_CONFIRMED
+  PAYMENT_REJECTED
+}
+
 model User {
-  id          String   @id @default(cuid())
-  displayName String
-  email       String?
-  createdAt   DateTime @default(now())
+  id           String   @id @default(cuid())
+  displayName  String
+  /// Login handle (unique, case-insensitive storage as lowercase)
+  username     String   @unique
+  passwordHash String
+  email        String?
+  createdAt    DateTime @default(now())
 
   memberships Membership[]
 }
@@ -73,6 +89,10 @@ model Community {
   expenses        Expense[]
   auditEvents     AuditEvent[]
   invitations     CommunityInvitation[]
+  categories      Category[]
+  creditCategories CreditCategory[]
+  credits         Credit[]
+  notifications   CommunityNotification[]
 }
 
 model Membership {
@@ -98,12 +118,16 @@ model Membership {
   hardshipFundingRecorded HardshipFunding[]      @relation("FundingRecorder")
   hardshipAwardsReceived  HardshipAward[]        @relation("AwardRecipient")
   hardshipAwardsApproved  HardshipAward[]        @relation("AwardApprover")
+  creditsRecorded         Credit[]               @relation("CreditRecorder")
   cashTransactionsAsParty CashTransaction[]      @relation("CashParty")
   cashTransactionsRecorded CashTransaction[]     @relation("CashRecorder")
   withdrawals             Withdrawal[]           @relation("WithdrawnMember")
   withdrawalsExecuted     Withdrawal[]           @relation("WithdrawalExecutor")
   auditEvents             AuditEvent[]
   invitationsCreated      CommunityInvitation[]  @relation("InvitationCreator")
+  paymentSubmissions      PaymentSubmission[]    @relation("PaymentSubmitter")
+  paymentDecisions        PaymentSubmission[]    @relation("PaymentDecider")
+  notificationReads       CommunityNotificationRead[]
 
   @@unique([communityId, userId])
 }
@@ -114,6 +138,8 @@ model FinancialCycle {
   name                          String
   status                        CycleStatus @default(OPEN)
   revision                      Int         @default(1)
+  /// Coordinator-set end of the cycle (inclusive end-of-day semantics in UI).
+  endsAt                        DateTime
   closedAt                      DateTime?
   closeAcknowledgedOutstanding  Boolean     @default(false)
   createdAt                     DateTime    @default(now())
@@ -124,9 +150,11 @@ model FinancialCycle {
   contributionCapRequests ContributionCapRequest[]
   hardshipFundings        HardshipFunding[]
   hardshipAwards          HardshipAward[]
+  credits                 Credit[]
   cashTransactions        CashTransaction[]
   withdrawals             Withdrawal[]
   auditEvents             AuditEvent[]
+  paymentSubmissions      PaymentSubmission[]
 }
 
 model RuleVersion {
@@ -138,6 +166,10 @@ model RuleVersion {
   title                            String
   bodyMarkdown                     String
   equalShareFallbackWhenZeroUsage  Boolean    @default(true)
+  /// JSON object of coordinator feature toggles (versioned; never rewrite history)
+  featureTogglesJson               String     @default("{}")
+  /// Optional max committed spend for the cycle (drafts excluded). Null = uncapped.
+  cycleBudgetCapCents              Int?
   /// JSON array of membership IDs required to accept (snapshot at propose time)
   requiredAcceptorIdsJson          String     @default("[]")
   createdByMembershipId            String
@@ -166,6 +198,57 @@ model RuleAcceptance {
   @@unique([ruleVersionId, membershipId])
 }
 
+model Category {
+  id          String    @id @default(cuid())
+  communityId String
+  name        String
+  archivedAt  DateTime?
+  createdAt   DateTime  @default(now())
+
+  community Community @relation(fields: [communityId], references: [id])
+  expenses  Expense[]
+
+  @@unique([communityId, name])
+}
+
+/// Reusable labels for credits (grants / subsidies) — separate from expense Category.
+model CreditCategory {
+  id          String    @id @default(cuid())
+  communityId String
+  name        String
+  archivedAt  DateTime?
+  createdAt   DateTime  @default(now())
+
+  community Community @relation(fields: [communityId], references: [id])
+  credits   Credit[]
+
+  @@unique([communityId, name])
+}
+
+/// Pooled inflow: subsidy, grant, or similar credit into the community finance pool.
+model Credit {
+  id                     String   @id @default(cuid())
+  communityId            String
+  cycleId                String
+  title                  String
+  /// Display label (reusable CreditCategory name or one-time label)
+  category               String
+  categoryId             String?
+  isOneTimeCategory      Boolean  @default(false)
+  amountCents            Int
+  note                   String?
+  receivedAt             DateTime @default(now())
+  recordedByMembershipId String
+  cashTransactionId      String?  @unique
+  createdAt              DateTime @default(now())
+
+  community       Community       @relation(fields: [communityId], references: [id])
+  cycle           FinancialCycle  @relation(fields: [cycleId], references: [id])
+  creditCategory  CreditCategory? @relation(fields: [categoryId], references: [id])
+  recordedBy      Membership      @relation("CreditRecorder", fields: [recordedByMembershipId], references: [id])
+  cashTransaction CashTransaction? @relation("CreditCashLink", fields: [cashTransactionId], references: [id])
+}
+
 model Expense {
   id                     String        @id @default(cuid())
   communityId            String
@@ -173,11 +256,16 @@ model Expense {
   ruleVersionId          String?
   status                 ExpenseStatus @default(DRAFT)
   title                  String
+  /// Display label (reusable category name or one-time label)
   category               String
+  categoryId             String?
+  /// True when category is a one-time label (not a reusable Category row)
+  isOneTimeCategory      Boolean       @default(false)
   fixedCents             Int
   variableCents          Int
   totalCents             Int
   usageLabel             String
+  dueAt                  DateTime?
   frontedByMembershipId  String?
   needsRevision          Boolean       @default(false)
   committedAt            DateTime?
@@ -189,11 +277,13 @@ model Expense {
   community   Community            @relation(fields: [communityId], references: [id])
   cycle       FinancialCycle       @relation(fields: [cycleId], references: [id])
   ruleVersion RuleVersion?         @relation(fields: [ruleVersionId], references: [id])
+  categoryRef Category?            @relation(fields: [categoryId], references: [id])
   frontedBy   Membership?          @relation("ExpenseFrontedBy", fields: [frontedByMembershipId], references: [id])
   createdBy   Membership           @relation("ExpenseCreatedBy", fields: [createdByMembershipId], references: [id])
   participants ExpenseParticipant[]
   allocations Allocation[]
   cashTransactions CashTransaction[]
+  paymentSubmissions PaymentSubmission[]
 }
 
 model ExpenseParticipant {
@@ -291,6 +381,8 @@ model CashTransaction {
   recordedBy    Membership       @relation("CashRecorder", fields: [recordedByMembershipId], references: [id])
   /// Canonical RECEIVED link is HardshipFunding.cashTransactionId (no double-count).
   linkedFunding HardshipFunding? @relation("FundingCashLink")
+  linkedCredit  Credit?          @relation("CreditCashLink")
+  paymentSubmission PaymentSubmission?
 
   @@unique([cycleId, idempotencyKey])
 }
@@ -320,6 +412,56 @@ model CommunityInvitation {
 
   community Community  @relation(fields: [communityId], references: [id])
   createdBy Membership @relation("InvitationCreator", fields: [createdByMembershipId], references: [id])
+}
+
+model PaymentSubmission {
+  id                      String                  @id @default(cuid())
+  cycleId                 String
+  expenseId               String?
+  membershipId            String
+  amountCents             Int
+  /// DEMO_SIMULATE | ALIPAY_PLACEHOLDER | WALLET_PLACEHOLDER
+  method                  String
+  status                  PaymentSubmissionStatus @default(PENDING_CONFIRMATION)
+  note                    String?
+  /// Outstanding contribution at submit time (stale-check on confirm)
+  expectedOutstandingCents Int
+  submittedAt             DateTime                @default(now())
+  decidedAt               DateTime?
+  decidedByMembershipId   String?
+  rejectionReason         String?
+  cashTransactionId       String?                 @unique
+
+  cycle       FinancialCycle  @relation(fields: [cycleId], references: [id])
+  expense     Expense?        @relation(fields: [expenseId], references: [id])
+  membership  Membership      @relation("PaymentSubmitter", fields: [membershipId], references: [id])
+  decidedBy   Membership?     @relation("PaymentDecider", fields: [decidedByMembershipId], references: [id])
+  cashTransaction CashTransaction? @relation(fields: [cashTransactionId], references: [id])
+}
+
+model CommunityNotification {
+  id          String           @id @default(cuid())
+  communityId String
+  kind        NotificationKind
+  title       String
+  body        String
+  payloadJson String           @default("{}")
+  createdAt   DateTime         @default(now())
+
+  community Community                   @relation(fields: [communityId], references: [id])
+  reads     CommunityNotificationRead[]
+}
+
+model CommunityNotificationRead {
+  id             String   @id @default(cuid())
+  notificationId String
+  membershipId   String
+  readAt         DateTime @default(now())
+
+  notification CommunityNotification @relation(fields: [notificationId], references: [id])
+  membership   Membership            @relation(fields: [membershipId], references: [id])
+
+  @@unique([notificationId, membershipId])
 }
 
 model AuditEvent {

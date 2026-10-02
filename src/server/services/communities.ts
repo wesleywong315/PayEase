@@ -153,7 +153,7 @@ export async function revokeCommunityInvitation(input: {
   return updated;
 }
 
-/** Public-safe preview — no financial fields. */
+/** Public-safe preview — no financial fields. Includes accepted rules for join review. */
 export async function getInvitationPreview(token: string) {
   const invitation = await prisma.communityInvitation.findUnique({
     where: { token },
@@ -191,6 +191,29 @@ export async function getInvitationPreview(token: string) {
     );
   }
 
+  const openCycle = await prisma.financialCycle.findFirst({
+    where: { communityId: invitation.communityId, status: "OPEN" },
+    orderBy: { createdAt: "desc" },
+    select: { id: true, name: true },
+  });
+
+  const acceptedRule = openCycle
+    ? await prisma.ruleVersion.findFirst({
+        where: { cycleId: openCycle.id, status: "ACCEPTED" },
+        orderBy: { versionNumber: "desc" },
+        select: {
+          id: true,
+          title: true,
+          bodyMarkdown: true,
+          versionNumber: true,
+          featureTogglesJson: true,
+          equalShareFallbackWhenZeroUsage: true,
+          cycleBudgetCapCents: true,
+          acceptedAt: true,
+        },
+      })
+    : null;
+
   return {
     token: invitation.token,
     expiresAt: invitation.expiresAt,
@@ -198,6 +221,8 @@ export async function getInvitationPreview(token: string) {
     community: invitation.community,
     coordinatorName: invitation.createdBy.user.displayName,
     roleGranted: "MEMBER" as const,
+    openCycle,
+    acceptedRule,
   };
 }
 
@@ -286,6 +311,35 @@ export async function confirmJoinInvitation(input: {
       },
     });
 
+    // Uphold current accepted rules: record acceptance for the open-cycle rule.
+    const openCycle = await tx.financialCycle.findFirst({
+      where: { communityId: invitation.communityId, status: "OPEN" },
+      orderBy: { createdAt: "desc" },
+      select: { id: true },
+    });
+    if (openCycle) {
+      const acceptedRule = await tx.ruleVersion.findFirst({
+        where: { cycleId: openCycle.id, status: "ACCEPTED" },
+        orderBy: { versionNumber: "desc" },
+        select: { id: true },
+      });
+      if (acceptedRule) {
+        await tx.ruleAcceptance.upsert({
+          where: {
+            ruleVersionId_membershipId: {
+              ruleVersionId: acceptedRule.id,
+              membershipId: membership.id,
+            },
+          },
+          update: { acceptedAt: new Date() },
+          create: {
+            ruleVersionId: acceptedRule.id,
+            membershipId: membership.id,
+          },
+        });
+      }
+    }
+
     return {
       alreadyMember: false as const,
       membership,
@@ -297,6 +351,7 @@ export async function confirmJoinInvitation(input: {
 export async function createFinancialCycle(input: {
   communityId: string;
   name: string;
+  endsAt: Date;
   actorMembershipId: string;
 }) {
   const name = input.name.trim();
@@ -306,11 +361,35 @@ export async function createFinancialCycle(input: {
       "Cycle name must be between 2 and 80 characters.",
     );
   }
+  if (Number.isNaN(input.endsAt.getTime())) {
+    throw new DomainError("VALIDATION_ERROR", "A valid cycle end date is required.");
+  }
+  // End must be today or later (compare calendar day in UTC loosely via timestamp)
+  const startOfToday = new Date();
+  startOfToday.setHours(0, 0, 0, 0);
+  if (input.endsAt.getTime() < startOfToday.getTime()) {
+    throw new DomainError(
+      "VALIDATION_ERROR",
+      "Cycle end date must be today or in the future.",
+    );
+  }
+
+  const existingOpen = await prisma.financialCycle.findFirst({
+    where: { communityId: input.communityId, status: "OPEN" },
+    select: { id: true },
+  });
+  if (existingOpen) {
+    throw new DomainError(
+      "CONFLICT",
+      "This community already has an open cycle. Close it before opening another.",
+    );
+  }
 
   const cycle = await prisma.financialCycle.create({
     data: {
       communityId: input.communityId,
       name,
+      endsAt: input.endsAt,
       status: "OPEN",
       revision: 1,
     },
@@ -324,7 +403,10 @@ export async function createFinancialCycle(input: {
       action: "CYCLE_CREATED",
       entityType: "FinancialCycle",
       entityId: cycle.id,
-      payloadJson: JSON.stringify({ name }),
+      payloadJson: JSON.stringify({
+        name,
+        endsAt: input.endsAt.toISOString(),
+      }),
     },
   });
 

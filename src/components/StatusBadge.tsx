@@ -15,6 +15,7 @@ const STATUS_TONES: Record<string, StatusTone> = {
   OPEN: "accent",
   CLOSED: "neutral",
   PENDING: "warning",
+  PENDING_CONFIRMATION: "warning",
   APPROVED: "success",
   REJECTED: "danger",
   ACCEPTED: "success",
@@ -25,6 +26,16 @@ const STATUS_TONES: Record<string, StatusTone> = {
   MEMBER: "neutral",
   RECEIVED: "success",
   PLEDGED: "warning",
+  CONFIRMED: "success",
+  OVERDUE: "danger",
+  DUE_SOON: "warning",
+  NO_DUE_DATE: "neutral",
+  SETTLED: "success",
+  ARCHIVED: "neutral",
+  UPCOMING: "accent",
+  PAYMENT_SUBMITTED: "warning",
+  PAYMENT_CONFIRMED: "success",
+  PAYMENT_REJECTED: "danger",
 };
 
 type StatusBadgeProps = {

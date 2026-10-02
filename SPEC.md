@@ -912,26 +912,27 @@ After support approval, Dana leaves:
 ### 11.1 Current tests — **IMPLEMENTED**
 
 - Env validation rejects empty/missing `DATABASE_URL` (`src/tests/env.test.ts`)
+- Allocation engine baselines, remainder, zero-usage, invalid inputs (`allocation.test.ts`)
+- Session token + money formatting (`session-and-money.test.ts`)
+- Demo ID / money contracts (`demo-seed.contract.test.ts`)
+- Invitation token/status/join idempotency with mocked Prisma (`invitations.test.ts`)
+- Stage 3–5 contracts: HKD parse, donut paths, method names (`stage3-5.contract.test.ts`)
+- Payment pending→confirm integration against seeded SQLite (`payments.integration.test.ts`) — verified: pending does not change balances; confirm writes one `MEMBER_CONTRIBUTION`; double-confirm rejected; Alipay placeholder rejected
 
-### 11.2 Required tests — **PLANNED**
+### 11.2 Required tests — **PLANNED** (remaining gaps)
 
-**Unit (allocation engine)**
-
-- Seed training-package baselines  
-- Largest-remainder + membershipId tie-break  
-- Zero usage fallback + warning  
-- Invalid inputs rejected  
+**Unit (allocation engine)** — largely covered in 11.1
 
 **Service / API**
 
 - Missing rule acceptance blocks commit  
 - Hardship shortfall details  
 - Concurrent funding approval does not overspend (transaction / constraint)  
-- Private fields absent for unauthorized callers  
+- Private fields absent for unauthorized callers (UI filters exist; API matrix incomplete)  
 - Withdrawal persistence + empty draft `needsRevision`  
-- Preview non-mutation  
-- Stale `cycleRevision` rejected  
-- Payment idempotency  
+- Preview non-mutation (preview path exists; dedicated test pending)  
+- Stale `cycleRevision` rejected (implemented in services; dedicated test pending)  
+- Payment idempotency — **partial** via integration test  
 - Payout limits / treasurer cash floor  
 - Overpayment → refund due  
 - Closed-cycle write rejection  
@@ -1089,12 +1090,14 @@ After support approval, Dana leaves:
 
 | Area | Status |
 | --- | --- |
-| Prisma domain models + SQLite seed (§10 football demo) | **IMPLEMENTED** |
+| Prisma domain models + SQLite seed (§10 football demo + multi-community inbox) | **IMPLEMENTED** |
 | Pure allocation engine + Vitest | **IMPLEMENTED** |
-| Read-only community UI shells | **IMPLEMENTED** (no mutations) |
-| Demo session / protected routes | **MISSING** (login is preview-only) |
-| Hardship / withdrawal / settlement / report **services** | **NOT IMPLEMENTED** (UI reads DB only) |
-| Invitations, categories, payment submissions, notifications | **MISSING** |
+| Demo session / protected routes / landing / inbox | **IMPLEMENTED** |
+| Community create + QR invitations + join confirm + scanner/paste | **IMPLEMENTED** |
+| Role-scoped nav, versioned rules (toggles + cycle budget cap), categories | **IMPLEMENTED** |
+| Expense draft / preview / commit with `dueAt` | **IMPLEMENTED** |
+| Payment ribbons, `PaymentSubmission` pending→confirm, Updates feed | **IMPLEMENTED** |
+| Report category donut + member/coordinator privacy filters | **IMPLEMENTED** (hardship/withdrawal **execution engines** still deferred) |
 | Package name still `teamfair` | Cosmetic lag |
 
 ### 14.2 Main journey
@@ -1195,13 +1198,13 @@ Member nav: Overview, My payments, Expenses (visibility rules), Rules, My hardsh
 
 ### 14.10 Implementation stages (this update)
 
-1. Theme/typography, landing, demo session, personal inbox, profile.  
-2. Create community + invitations + join confirmation.  
-3. Role-scoped community home + member payment ribbons + due dates.  
-4. Payment submissions + coordinator updates.  
-5. Rules feature settings + cycle budget cap.  
-6. Categories + report chart.  
-7. Privacy hardening + regression suite.
+1. Theme/typography, landing, demo session, personal inbox, profile. **DONE**  
+2. Create community + invitations + join confirmation. **DONE**  
+3. Role-scoped community home + member payment ribbons + due dates. **DONE**  
+4. Payment submissions + coordinator updates. **DONE**  
+5. Rules feature settings + cycle budget cap. **DONE**  
+6. Categories + report chart. **DONE**  
+7. Privacy hardening + regression suite. **PARTIAL** (privacy filters + payment/report tests; full §11.2 E2E script and hardship/withdrawal services still open)
 
 Preserve §6 allocation / hardship / withdrawal / ledger invariants when those services are implemented. Do not replace DB-backed pages with static mocks. Ask before destructive migrations.
 

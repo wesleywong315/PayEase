@@ -1,10 +1,17 @@
 import path from "node:path";
 import { PrismaBetterSqlite3 } from "@prisma/adapter-better-sqlite3";
+import { PrismaPg } from "@prisma/adapter-pg";
+import { Pool } from "pg";
 import { PrismaClient } from "@/generated/prisma/client";
-import { getDatabaseUrl } from "@/lib/env";
+import {
+  detectDatabaseProvider,
+  getDatabaseUrl,
+  type DatabaseProvider,
+} from "@/lib/env";
 
 const globalForPrisma = globalThis as unknown as {
   prisma: PrismaClient | undefined;
+  pgPool: Pool | undefined;
 };
 
 /**
@@ -28,11 +35,29 @@ export function resolveSqliteUrl(databaseUrl: string): string {
   return `file:${path.resolve(process.cwd(), filePath)}`;
 }
 
-function createPrismaClient(): PrismaClient {
-  const adapter = new PrismaBetterSqlite3({
-    url: resolveSqliteUrl(getDatabaseUrl()),
-  });
+export function createPrismaClient(
+  databaseUrl: string = getDatabaseUrl(),
+): PrismaClient {
+  const provider: DatabaseProvider = detectDatabaseProvider(databaseUrl);
 
+  if (provider === "postgresql") {
+    const pool =
+      globalForPrisma.pgPool ??
+      new Pool({
+        connectionString: databaseUrl,
+        // Supabase transaction pooler (port 6543) often needs this.
+        max: 10,
+      });
+    if (process.env.NODE_ENV !== "production") {
+      globalForPrisma.pgPool = pool;
+    }
+    const adapter = new PrismaPg(pool);
+    return new PrismaClient({ adapter });
+  }
+
+  const adapter = new PrismaBetterSqlite3({
+    url: resolveSqliteUrl(databaseUrl),
+  });
   return new PrismaClient({ adapter });
 }
 

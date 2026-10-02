@@ -100,7 +100,7 @@ export default async function SettlementPage({ params }: PageProps) {
                   Baseline
                 </th>
                 <th scope="col" className="px-4 py-3 font-semibold">
-                  Hardship applied
+                  PayAid applied
                 </th>
                 <th scope="col" className="px-4 py-3 font-semibold">
                   Final charge

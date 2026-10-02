@@ -50,7 +50,7 @@ export default async function JoinTokenPage({ params }: PageProps) {
         backHref="/join"
         backLabel="Back to join tools"
         title="Join confirmation"
-        description="Review the community before confirming membership."
+        description="Review the community and its rules before confirming membership."
       />
 
       <div className="mt-8">
@@ -78,6 +78,21 @@ export default async function JoinTokenPage({ params }: PageProps) {
               coordinatorName: preview.coordinatorName,
               roleGranted: preview.roleGranted,
               expiresAt: preview.expiresAt.toISOString(),
+              openCycle: preview.openCycle,
+              acceptedRule: preview.acceptedRule
+                ? {
+                    id: preview.acceptedRule.id,
+                    title: preview.acceptedRule.title,
+                    bodyMarkdown: preview.acceptedRule.bodyMarkdown,
+                    versionNumber: preview.acceptedRule.versionNumber,
+                    featureTogglesJson: preview.acceptedRule.featureTogglesJson,
+                    equalShareFallbackWhenZeroUsage:
+                      preview.acceptedRule.equalShareFallbackWhenZeroUsage,
+                    cycleBudgetCapCents: preview.acceptedRule.cycleBudgetCapCents,
+                    acceptedAt:
+                      preview.acceptedRule.acceptedAt?.toISOString() ?? null,
+                  }
+                : null,
             }}
             signedIn={Boolean(user)}
             alreadyMember={alreadyMember}

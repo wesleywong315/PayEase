@@ -8,10 +8,30 @@ export const DEMO = {
   cycleId: "demo-cycle-autumn-2026",
   cycleName: "Autumn 2026",
   users: {
-    alex: { id: "user_alex", displayName: "Alex", email: "alex@demo.payease.local" },
-    ben: { id: "user_ben", displayName: "Ben", email: "ben@demo.payease.local" },
-    chloe: { id: "user_chloe", displayName: "Chloe", email: "chloe@demo.payease.local" },
-    dana: { id: "user_dana", displayName: "Dana", email: "dana@demo.payease.local" },
+    alex: {
+      id: "user_alex",
+      username: "alex",
+      displayName: "Alex",
+      email: "alex@demo.payease.local",
+    },
+    ben: {
+      id: "user_ben",
+      username: "ben",
+      displayName: "Ben",
+      email: "ben@demo.payease.local",
+    },
+    chloe: {
+      id: "user_chloe",
+      username: "chloe",
+      displayName: "Chloe",
+      email: "chloe@demo.payease.local",
+    },
+    dana: {
+      id: "user_dana",
+      username: "dana",
+      displayName: "Dana",
+      email: "dana@demo.payease.local",
+    },
   },
   memberships: {
     alex: "mem_alex",

@@ -23,5 +23,16 @@ export async function getOpenCycle(communityId: string) {
   return prisma.financialCycle.findFirst({
     where: { communityId, status: "OPEN" },
     orderBy: { createdAt: "desc" },
+    select: {
+      id: true,
+      communityId: true,
+      name: true,
+      status: true,
+      revision: true,
+      endsAt: true,
+      closedAt: true,
+      closeAcknowledgedOutstanding: true,
+      createdAt: true,
+    },
   });
 }

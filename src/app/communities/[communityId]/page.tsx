@@ -1,14 +1,19 @@
 import Link from "next/link";
+import {
+  CoordinatorFinanceChart,
+  type FinanceBarSeries,
+} from "@/components/CoordinatorFinanceChart";
+import { CoordinatorReceivablesPanel } from "@/components/CoordinatorReceivablesPanel";
 import { CreateCycleForm } from "@/components/CreateCycleForm";
 import { EmptyState } from "@/components/EmptyState";
 import { MoneyText } from "@/components/MoneyText";
 import { PageHeader } from "@/components/PageHeader";
-import { StatGrid } from "@/components/StatGrid";
 import { StatusBadge } from "@/components/StatusBadge";
 import { getCommunityOrNotFound, getOpenCycle } from "@/lib/community";
 import { prisma } from "@/lib/db";
 import { getSessionUser } from "@/server/auth/current-user";
 import { getActiveMembership } from "@/server/auth/permissions";
+import { getCoordinatorReceivables } from "@/server/services/receivables";
 
 export const dynamic = "force-dynamic";
 
@@ -16,24 +21,46 @@ type PageProps = {
   params: Promise<{ communityId: string }>;
 };
 
+const CASH_IN = new Set([
+  "HARDSHIP_FUNDING_RECEIPT",
+  "CREDIT_RECEIPT",
+  "MEMBER_CONTRIBUTION",
+]);
+const CASH_OUT = new Set(["PAYER_REIMBURSEMENT", "MEMBER_REFUND"]);
+
+const CASH_TYPE_LABEL: Record<string, string> = {
+  HARDSHIP_FUNDING_RECEIPT: "PayAid funding in",
+  CREDIT_RECEIPT: "Credits / grants",
+  MEMBER_CONTRIBUTION: "Member contributions",
+  PAYER_REIMBURSEMENT: "Payer reimbursements",
+  MEMBER_REFUND: "Member refunds",
+};
+
 function treasurerCashApprox(
   txs: { type: string; amountCents: number }[],
 ): number {
   let total = 0;
   for (const tx of txs) {
-    if (
-      tx.type === "HARDSHIP_FUNDING_RECEIPT" ||
-      tx.type === "MEMBER_CONTRIBUTION"
-    ) {
-      total += tx.amountCents;
-    } else if (
-      tx.type === "PAYER_REIMBURSEMENT" ||
-      tx.type === "MEMBER_REFUND"
-    ) {
-      total -= tx.amountCents;
-    }
+    if (CASH_IN.has(tx.type)) total += tx.amountCents;
+    else if (CASH_OUT.has(tx.type)) total -= tx.amountCents;
   }
   return total;
+}
+
+function formatCycleWindow(endsAt: Date | string | null | undefined): string {
+  if (endsAt == null) return "End date not set";
+  const endDate = endsAt instanceof Date ? endsAt : new Date(endsAt);
+  if (Number.isNaN(endDate.getTime())) return "End date not set";
+  const end = endDate.toISOString().slice(0, 10);
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const endDay = new Date(endDate);
+  endDay.setHours(0, 0, 0, 0);
+  const ms = endDay.getTime() - today.getTime();
+  const days = Math.ceil(ms / (24 * 60 * 60 * 1000));
+  if (days < 0) return `Ended ${end} (${Math.abs(days)} day(s) ago)`;
+  if (days === 0) return `Ends today (${end})`;
+  return `Ends ${end} · ${days} day(s) remaining`;
 }
 
 export default async function CommunityDashboardPage({ params }: PageProps) {
@@ -48,7 +75,7 @@ export default async function CommunityDashboardPage({ params }: PageProps) {
 
   if (!openCycle) {
     return (
-      <div className="space-y-6">
+      <div className="space-y-5">
         <PageHeader
           showBack={false}
           eyebrow={community.name}
@@ -59,10 +86,10 @@ export default async function CommunityDashboardPage({ params }: PageProps) {
           <>
             <CreateCycleForm communityId={communityId} />
             <Link
-              href={`/communities/${communityId}/invitations`}
+              href={`/communities/${communityId}/community`}
               className="focus-ring inline-flex text-sm font-semibold text-primary underline-offset-2 hover:underline"
             >
-              Share invitation
+              Community tools
             </Link>
           </>
         ) : (
@@ -76,55 +103,53 @@ export default async function CommunityDashboardPage({ params }: PageProps) {
   }
 
   const [
-    committedAgg,
-    hardshipFundingAgg,
-    hardshipAppliedAgg,
+    committedExpenses,
+    hardshipFundingRows,
+    creditRows,
     cashTxs,
-    pendingCapCount,
-    members,
     expenses,
+    receivables,
   ] = await Promise.all([
-    prisma.expense.aggregate({
+    prisma.expense.findMany({
       where: {
         communityId,
         cycleId: openCycle.id,
         status: "COMMITTED",
       },
-      _sum: { totalCents: true },
+      select: { id: true, title: true, category: true, totalCents: true },
+      orderBy: { committedAt: "asc" },
     }),
-    prisma.hardshipFunding.aggregate({
-      where: {
-        cycleId: openCycle.id,
-        kind: "RECEIVED",
+    prisma.hardshipFunding.findMany({
+      where: { cycleId: openCycle.id, kind: "RECEIVED" },
+      select: {
+        id: true,
+        amountCents: true,
+        note: true,
+        createdAt: true,
       },
-      _sum: { amountCents: true },
+      orderBy: { createdAt: "asc" },
     }),
-    prisma.allocation.aggregate({
-      where: {
-        expense: {
-          communityId,
-          cycleId: openCycle.id,
-          status: "COMMITTED",
-        },
+    prisma.credit.findMany({
+      where: { communityId, cycleId: openCycle.id },
+      select: {
+        id: true,
+        title: true,
+        category: true,
+        amountCents: true,
+        receivedAt: true,
       },
-      _sum: { hardshipAppliedCents: true },
+      orderBy: { receivedAt: "asc" },
     }),
     prisma.cashTransaction.findMany({
       where: { cycleId: openCycle.id },
-      select: { type: true, amountCents: true },
-    }),
-    prisma.contributionCapRequest.count({
-      where: {
-        cycleId: openCycle.id,
-        status: "PENDING",
+      select: {
+        id: true,
+        type: true,
+        amountCents: true,
+        note: true,
+        createdAt: true,
       },
-    }),
-    prisma.membership.findMany({
-      where: { communityId, status: "ACTIVE" },
-      include: {
-        user: { select: { displayName: true, email: true } },
-      },
-      orderBy: { joinedAt: "asc" },
+      orderBy: { createdAt: "asc" },
     }),
     prisma.expense.findMany({
       where: { communityId, cycleId: openCycle.id },
@@ -137,108 +162,133 @@ export default async function CommunityDashboardPage({ params }: PageProps) {
         totalCents: true,
       },
     }),
+    isCoordinator
+      ? getCoordinatorReceivables({
+          communityId,
+          cycleId: openCycle.id,
+        })
+      : Promise.resolve([]),
   ]);
 
-  const totalCommitted = committedAgg._sum.totalCents ?? 0;
-  const hardshipReceived = hardshipFundingAgg._sum.amountCents ?? 0;
-  const hardshipApplied = hardshipAppliedAgg._sum.hardshipAppliedCents ?? 0;
+  const totalCommitted = committedExpenses.reduce(
+    (sum, e) => sum + e.totalCents,
+    0,
+  );
+  const payAidReceived = hardshipFundingRows.reduce(
+    (sum, row) => sum + row.amountCents,
+    0,
+  );
+  const creditsReceived = creditRows.reduce(
+    (sum, row) => sum + row.amountCents,
+    0,
+  );
+  const fundingInTotal = payAidReceived + creditsReceived;
   const cashApprox = treasurerCashApprox(cashTxs);
 
+  const cashByType = new Map<string, number>();
+  for (const tx of cashTxs) {
+    if (!CASH_IN.has(tx.type) && !CASH_OUT.has(tx.type)) continue;
+    const signed = CASH_OUT.has(tx.type) ? -tx.amountCents : tx.amountCents;
+    cashByType.set(tx.type, (cashByType.get(tx.type) ?? 0) + signed);
+  }
+
+  const fundingBreakdown = [
+    ...creditRows.map((row) => ({
+      id: `credit:${row.id}`,
+      label: row.title,
+      detail: `${row.category} · ${row.receivedAt.toISOString().slice(0, 10)}`,
+      amountCents: row.amountCents,
+    })),
+    ...hardshipFundingRows.map((row) => ({
+      id: `payaid:${row.id}`,
+      label: row.note?.trim() || "PayAid contribution",
+      detail: `PayAid · ${row.createdAt.toISOString().slice(0, 10)}`,
+      amountCents: row.amountCents,
+    })),
+  ];
+
+  const financeSeries: FinanceBarSeries[] = [
+    {
+      id: "committed",
+      label: "Committed",
+      totalCents: totalCommitted,
+      color: "#1f5a45",
+      breakdown: committedExpenses.map((e) => ({
+        id: e.id,
+        label: e.title,
+        detail: e.category,
+        amountCents: e.totalCents,
+      })),
+    },
+    {
+      id: "fundingIn",
+      label: "Funding in",
+      totalCents: fundingInTotal,
+      color: "#b88a5a",
+      breakdown: fundingBreakdown,
+    },
+    {
+      id: "treasurerCash",
+      label: "Cash",
+      totalCents: Math.max(0, cashApprox),
+      color: "#103b2f",
+      breakdown: [...cashByType.entries()].map(([type, amount]) => ({
+        id: type,
+        label: CASH_TYPE_LABEL[type] ?? type,
+        detail: amount < 0 ? "Outflow" : "Inflow",
+        amountCents: Math.abs(amount),
+      })),
+    },
+  ];
+
   return (
-    <div className="space-y-10">
+    <div className="space-y-6">
       <PageHeader
         showBack={false}
         eyebrow={openCycle.name}
         title="Dashboard"
-        description={
-          community.description?.trim()
-            ? community.description
-            : `Overview for ${community.name}.`
-        }
+        description={formatCycleWindow(openCycle.endsAt)}
         actions={
           isCoordinator ? (
             <Link
-              href={`/communities/${communityId}/invitations`}
-              className="focus-ring rounded-full border border-border px-4 py-2 text-sm font-semibold text-ink"
+              href={`/communities/${communityId}/community`}
+              className="focus-ring rounded-full border border-border px-3 py-1.5 text-sm font-semibold text-ink"
             >
-              Share invitation
+              Community
             </Link>
           ) : null
         }
       />
 
-      <StatGrid
-        items={[
-          {
-            label: "Total committed expenses",
-            value: <MoneyText cents={totalCommitted} label="Total committed" />,
-          },
-          {
-            label: "Hardship funding received",
-            value: (
-              <MoneyText cents={hardshipReceived} label="Hardship funding received" />
-            ),
-          },
-          {
-            label: "Hardship support applied",
-            value: (
-              <MoneyText cents={hardshipApplied} label="Hardship support applied" />
-            ),
-          },
-          {
-            label: "Treasurer cash (approx)",
-            value: <MoneyText cents={cashApprox} label="Treasurer cash approximate" />,
-            hint: "Receipts + contributions − reimbursements − refunds",
-          },
-          {
-            label: "Pending cap requests",
-            value: pendingCapCount,
-          },
-          {
-            label: "Active members",
-            value: members.length,
-          },
-        ]}
-      />
+      {isCoordinator ? (
+        <>
+          <CoordinatorFinanceChart series={financeSeries} />
 
-      <section aria-labelledby="members-heading" className="space-y-4">
-        <h2 id="members-heading" className="text-xl font-semibold text-foreground">
-          Members
-        </h2>
-        {members.length === 0 ? (
-          <EmptyState title="No active members" />
-        ) : (
-          <ul className="divide-y divide-border border border-border bg-surface">
-            {members.map((member) => (
-              <li
-                key={member.id}
-                className="flex flex-wrap items-center justify-between gap-2 px-4 py-3"
-              >
-                <div>
-                  <p className="font-medium text-foreground">
-                    {member.user.displayName}
-                  </p>
-                  <p className="text-sm text-muted">
-                    {member.user.email ?? "No email"}
-                  </p>
-                </div>
-                <StatusBadge status={member.role} />
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
+          <section aria-labelledby="participants-heading" className="space-y-2">
+            <h2
+              id="participants-heading"
+              className="text-base font-semibold text-ink"
+            >
+              Participants
+            </h2>
+            <CoordinatorReceivablesPanel members={receivables} />
+          </section>
+        </>
+      ) : null}
 
-      <section aria-labelledby="expenses-heading" className="space-y-4">
+      <section aria-labelledby="expenses-heading" className="space-y-2">
         <div className="flex items-baseline justify-between gap-3">
-          <h2 id="expenses-heading" className="text-xl font-semibold text-foreground">
+          <h2
+            id="expenses-heading"
+            className="text-base font-semibold text-ink"
+          >
             Expenses
           </h2>
           <Link
-            href={`/communities/${communityId}/expenses`}
+            href={`/communities/${communityId}/finance`}
             className="text-sm font-semibold text-accent underline-offset-2 hover:underline"
           >
-            View all
+            View finance
           </Link>
         </div>
         {expenses.length === 0 ? (
@@ -247,19 +297,21 @@ export default async function CommunityDashboardPage({ params }: PageProps) {
             description="Committed and draft expenses will appear here."
           />
         ) : (
-          <ul className="divide-y divide-border border border-border bg-surface">
+          <ul className="divide-y divide-border overflow-hidden rounded-xl border border-border bg-surface">
             {expenses.map((expense) => (
               <li key={expense.id}>
                 <Link
                   href={`/communities/${communityId}/expenses/${expense.id}`}
-                  className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 transition-colors hover:bg-background"
+                  className="flex items-center justify-between gap-3 px-3 py-2 transition-colors hover:bg-canvas/70"
                 >
-                  <div>
-                    <p className="font-medium text-foreground">{expense.title}</p>
-                    <p className="text-sm text-muted">{expense.category}</p>
-                  </div>
-                  <div className="flex items-center gap-3">
-                    <MoneyText cents={expense.totalCents} />
+                  <p className="min-w-0 truncate text-sm font-medium text-ink">
+                    {expense.title}
+                  </p>
+                  <div className="flex shrink-0 items-center gap-2">
+                    <MoneyText
+                      cents={expense.totalCents}
+                      className="text-sm"
+                    />
                     <StatusBadge status={expense.status} />
                   </div>
                 </Link>

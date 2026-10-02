@@ -4,13 +4,14 @@ import { EmptyState } from "@/components/EmptyState";
 import { LoginForm } from "@/components/LoginForm";
 import { Logo } from "@/components/Logo";
 import { PageHeader } from "@/components/PageHeader";
+import { DEMO } from "../../../prisma/demo-ids";
 import { prisma } from "@/lib/db";
 import { getSessionUser, safeNextPath } from "@/server/auth/current-user";
 
 export const dynamic = "force-dynamic";
 
 export const metadata = {
-  title: "Demo login",
+  title: "Log in",
 };
 
 type PageProps = {
@@ -25,7 +26,9 @@ export default async function LoginPage({ searchParams }: PageProps) {
     redirect(nextPath);
   }
 
+  const demoIds = Object.values(DEMO.users).map((u) => u.id);
   const users = await prisma.user.findMany({
+    where: { id: { in: demoIds } },
     orderBy: { displayName: "asc" },
     include: {
       memberships: {
@@ -38,6 +41,7 @@ export default async function LoginPage({ searchParams }: PageProps) {
   const demoUsers = users.map((user) => ({
     id: user.id,
     displayName: user.displayName,
+    username: user.username,
     email: user.email,
     roleLabels: user.memberships.map(
       (m) =>
@@ -54,9 +58,9 @@ export default async function LoginPage({ searchParams }: PageProps) {
       </div>
 
       <PageHeader
-        eyebrow="Demo authentication"
+        eyebrow="Sign in"
         title="Log in"
-        description="Choose a seeded demo user. After login you land in your personal community inbox."
+        description="Use your username and password, or open Demo accounts for seeded hackathon users."
         backHref="/"
         backLabel="Back to landing"
       />
@@ -65,11 +69,10 @@ export default async function LoginPage({ searchParams }: PageProps) {
         {demoUsers.length === 0 ? (
           <EmptyState
             title="No demo users found"
-            description="Run the database seed, then refresh this page."
+            description="Run the database seed, then refresh this page. You can still create a new account from Demo accounts after seeding."
           />
-        ) : (
-          <LoginForm users={demoUsers} nextPath={nextPath} />
-        )}
+        ) : null}
+        <LoginForm users={demoUsers} nextPath={nextPath} />
       </div>
     </main>
   );
