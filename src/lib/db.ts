@@ -41,13 +41,10 @@ export function createPrismaClient(
   const provider: DatabaseProvider = detectDatabaseProvider(databaseUrl);
 
   if (provider === "postgresql") {
-    const connectionString = /[?&]sslmode=/i.test(databaseUrl)
-      ? databaseUrl
-      : `${databaseUrl}${databaseUrl.includes("?") ? "&" : "?"}sslmode=require`;
     const pool =
       globalForPrisma.pgPool ??
       new Pool({
-        connectionString,
+        connectionString: databaseUrl,
         // Supabase transaction pooler (port 6543) often needs this.
         max: 10,
       });
