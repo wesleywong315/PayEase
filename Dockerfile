@@ -11,12 +11,12 @@ RUN npm ci
 FROM node:20-bookworm-slim AS builder
 WORKDIR /app
 RUN apt-get update \
-  && apt-get install -y --no-install-recommends openssl ca-certificates \
+  && apt-get install -y --no-install-recommends openssl ca-certificates python3 make g++ \
   && rm -rf /var/lib/apt/lists/*
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
-# Prisma generate does not need a live DB; placeholder satisfies config load.
-ENV DATABASE_URL="file:./prisma/dev.db"
+# Placeholder only for the build adapter; Railway runtime DATABASE_URL is separate.
+ENV DATABASE_URL="postgresql://build:build@127.0.0.1:5432/build"
 RUN npx prisma generate && npm run build
 
 FROM node:20-bookworm-slim AS runner
