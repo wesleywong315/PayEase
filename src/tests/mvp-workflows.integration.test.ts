@@ -2,10 +2,7 @@
  * @vitest-environment node
  */
 import { afterAll, describe, expect, it } from "vitest";
-import { PrismaBetterSqlite3 } from "@prisma/adapter-better-sqlite3";
-import { PrismaClient } from "@/generated/prisma/client";
-import { resolveSqliteUrl } from "@/lib/db";
-import { getDatabaseUrl } from "@/lib/env";
+import { prisma } from "@/lib/db";
 import { DEMO, EXTRA_DEMO_COMMUNITIES } from "../../prisma/demo-ids";
 import { DEFAULT_FEATURE_TOGGLES } from "@/lib/feature-toggles";
 import { escapeCsvCell } from "@/server/services/reports";
@@ -18,13 +15,9 @@ import {
   recordPayAidFunding,
 } from "@/server/services/payaid";
 import { recordPayerReimbursement } from "@/server/services/cash";
+import { createCredit } from "@/server/services/credits";
 import { previewWithdrawal, executeWithdrawal } from "@/server/services/withdrawals";
 import { closeFinancialCycle } from "@/server/services/communities";
-
-const adapter = new PrismaBetterSqlite3({
-  url: resolveSqliteUrl(getDatabaseUrl()),
-});
-const prisma = new PrismaClient({ adapter });
 
 describe("unfinished-feature workflows", () => {
   afterAll(async () => {
@@ -84,7 +77,7 @@ describe("unfinished-feature workflows", () => {
     expect(done.status).toBe("ACCEPTED");
   });
 
-  it("pledged PayAid is not spendable; approval applies hardship to allocations", async () => {
+  it("received PayAid is spendable; approval applies hardship to allocations", async () => {
     const cashBefore = await prisma.cashTransaction.count({
       where: { cycleId: DEMO.cycleId, type: "HARDSHIP_FUNDING_RECEIPT" },
     });
@@ -92,25 +85,14 @@ describe("unfinished-feature workflows", () => {
       communityId: DEMO.communityId,
       cycleId: DEMO.cycleId,
       actorMembershipId: DEMO.memberships.alex,
-      amountCents: 50000,
-      kind: "PLEDGED",
-      note: "Pledge only",
-      idempotencyKey: `test-pledge-${Date.now()}`,
-    });
-    const cashAfterPledge = await prisma.cashTransaction.count({
-      where: { cycleId: DEMO.cycleId, type: "HARDSHIP_FUNDING_RECEIPT" },
-    });
-    expect(cashAfterPledge).toBe(cashBefore);
-
-    await recordPayAidFunding({
-      communityId: DEMO.communityId,
-      cycleId: DEMO.cycleId,
-      actorMembershipId: DEMO.memberships.alex,
       amountCents: 200000,
-      kind: "RECEIVED",
       note: "Test pool",
       idempotencyKey: `test-received-${Date.now()}`,
     });
+    const cashAfter = await prisma.cashTransaction.count({
+      where: { cycleId: DEMO.cycleId, type: "HARDSHIP_FUNDING_RECEIPT" },
+    });
+    expect(cashAfter).toBe(cashBefore + 1);
 
     const existingAward = await prisma.hardshipAward.findUnique({
       where: { capRequestId: DEMO.capRequestId },
@@ -134,7 +116,7 @@ describe("unfinished-feature workflows", () => {
     for (const row of danaRows) {
       await prisma.allocation.update({
         where: { id: row.id },
-        data: { finalChargeCents: row.baselineCents, hardshipAppliedCents: 0 },
+        data: { finalChargeCents: row.baselineCents, hardshipAppliedCents: 0, equalCoverAppliedCents: 0 },
       });
     }
     await prisma.contributionCapRequest.update({
@@ -174,8 +156,81 @@ describe("unfinished-feature workflows", () => {
     const hardship = danaAlloc.reduce((s, a) => s + a.hardshipAppliedCents, 0);
     const finals = danaAlloc.reduce((s, a) => s + a.finalChargeCents, 0);
     const baselines = danaAlloc.reduce((s, a) => s + a.baselineCents, 0);
+    const equalCover = danaAlloc.reduce((s, a) => s + a.equalCoverAppliedCents, 0);
     expect(hardship).toBe(result.award!.amountCents);
-    expect(finals + hardship).toBe(baselines);
+    expect(finals + hardship + equalCover).toBe(baselines);
+  });
+
+  it("splits a credit into equal cover and PayAid without double-counting cash", async () => {
+    const active = await prisma.membership.count({
+      where: { communityId: DEMO.communityId, status: "ACTIVE" },
+    });
+    expect(active).toBeGreaterThan(0);
+    const equalCoverCents = active * 100 + 7;
+    const payAidCents = 50;
+    const amountCents = equalCoverCents + payAidCents;
+    const cashBefore = await prisma.cashTransaction.count({
+      where: { cycleId: DEMO.cycleId, type: "CREDIT_RECEIPT" },
+    });
+    const hardshipCashBefore = await prisma.cashTransaction.count({
+      where: { cycleId: DEMO.cycleId, type: "HARDSHIP_FUNDING_RECEIPT" },
+    });
+
+    const remainingBefore = await prisma.membershipEqualCover.aggregate({
+      where: { cycleId: DEMO.cycleId },
+      _sum: { remainingCents: true },
+    });
+    const appliedBefore = await prisma.allocation.aggregate({
+      where: { expense: { cycleId: DEMO.cycleId, status: "COMMITTED" } },
+      _sum: { equalCoverAppliedCents: true },
+    });
+
+    const credit = await createCredit({
+      communityId: DEMO.communityId,
+      cycleId: DEMO.cycleId,
+      actorMembershipId: DEMO.memberships.alex,
+      title: "Split grant",
+      categoryId: null,
+      categoryLabel: "Test grant",
+      isOneTimeCategory: true,
+      amountCents,
+      equalCoverCents,
+      payAidCents,
+      idempotencyKey: `test-credit-split-${Date.now()}`,
+    });
+
+    expect(credit.unallocatedRemainderCents).toBe(equalCoverCents % active);
+    const slice = await prisma.hardshipFunding.findUnique({
+      where: { creditId: credit.id },
+    });
+    expect(slice?.amountCents).toBe(50);
+    expect(slice?.cashTransactionId).toBeNull();
+    const cashAfter = await prisma.cashTransaction.count({
+      where: { cycleId: DEMO.cycleId, type: "CREDIT_RECEIPT" },
+    });
+    const hardshipCashAfter = await prisma.cashTransaction.count({
+      where: { cycleId: DEMO.cycleId, type: "HARDSHIP_FUNDING_RECEIPT" },
+    });
+    expect(cashAfter).toBe(cashBefore + 1);
+    expect(hardshipCashAfter).toBe(hardshipCashBefore);
+
+    const remainingAfter = await prisma.membershipEqualCover.aggregate({
+      where: { cycleId: DEMO.cycleId },
+      _sum: { remainingCents: true },
+    });
+    const appliedAfter = await prisma.allocation.aggregate({
+      where: { expense: { cycleId: DEMO.cycleId, status: "COMMITTED" } },
+      _sum: { equalCoverAppliedCents: true },
+    });
+    const remainingDelta =
+      (remainingAfter._sum.remainingCents ?? 0) -
+      (remainingBefore._sum.remainingCents ?? 0);
+    const appliedDelta =
+      (appliedAfter._sum.equalCoverAppliedCents ?? 0) -
+      (appliedBefore._sum.equalCoverAppliedCents ?? 0);
+    expect(appliedDelta + remainingDelta).toBe(
+      equalCoverCents - (equalCoverCents % active),
+    );
   });
 
   it("reimbursement cannot exceed outstanding", async () => {

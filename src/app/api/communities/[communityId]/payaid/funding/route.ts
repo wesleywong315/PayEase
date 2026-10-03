@@ -13,7 +13,6 @@ type RouteCtx = { params: Promise<{ communityId: string }> };
 
 const schema = z.object({
   amountCents: z.number().int().positive(),
-  kind: z.enum(["RECEIVED", "PLEDGED"]),
   note: z.string().nullable().optional(),
   idempotencyKey: z.string().min(8).max(120),
 });
@@ -40,7 +39,9 @@ export async function POST(req: Request, ctx: RouteCtx) {
       communityId,
       cycleId: cycle.id,
       actorMembershipId: coord.membership.id,
-      ...parsed.data,
+      amountCents: parsed.data.amountCents,
+      note: parsed.data.note,
+      idempotencyKey: parsed.data.idempotencyKey,
     });
     return NextResponse.json({ funding }, { status: 201 });
   } catch (err) {

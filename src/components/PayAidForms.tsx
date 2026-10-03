@@ -8,7 +8,6 @@ import { parseHkdToCents } from "@/lib/money";
 export function PayAidFundingForm({ communityId }: { communityId: string }) {
   const router = useRouter();
   const [amountHkd, setAmountHkd] = useState("");
-  const [kind, setKind] = useState<"RECEIVED" | "PLEDGED">("RECEIVED");
   const [note, setNote] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
@@ -32,7 +31,6 @@ export function PayAidFundingForm({ communityId }: { communityId: string }) {
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({
                 amountCents,
-                kind,
                 note: note.trim() || null,
                 idempotencyKey: `payaid-${crypto.randomUUID()}`,
               }),
@@ -51,28 +49,9 @@ export function PayAidFundingForm({ communityId }: { communityId: string }) {
     >
       <h3 className="type-h3">Record PayAid funding</h3>
       <p className="type-caption">
-        Received funding is spendable. Pledges are visible but not spendable.
+        Received funding is spendable via contribution-cap approvals. To split
+        a grant between equal cover and PayAid, record it as a credit instead.
       </p>
-      <div className="flex flex-wrap gap-3">
-        <label className="text-sm">
-          <input
-            type="radio"
-            checked={kind === "RECEIVED"}
-            onChange={() => setKind("RECEIVED")}
-            className="mr-1"
-          />
-          Received
-        </label>
-        <label className="text-sm">
-          <input
-            type="radio"
-            checked={kind === "PLEDGED"}
-            onChange={() => setKind("PLEDGED")}
-            className="mr-1"
-          />
-          Pledged
-        </label>
-      </div>
       <input
         inputMode="decimal"
         required

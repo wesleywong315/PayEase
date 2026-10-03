@@ -6,6 +6,7 @@ import {
   parseFeatureToggles,
 } from "@/lib/feature-toggles";
 import { findProjectedCapBreaches } from "@/server/services/payaid";
+import { applyPendingEqualCover } from "@/server/services/equal-cover";
 import { DomainError } from "@/server/services/communities";
 
 export type { FeatureToggles };
@@ -655,18 +656,30 @@ export async function commitExpense(input: {
           usageShareCents: line.usageShareCents,
           baselineCents: line.baselineCents,
           hardshipAppliedCents: 0,
+          equalCoverAppliedCents: 0,
           finalChargeCents: line.baselineCents,
         },
       });
     }
 
-    const updated = await tx.expense.update({
+    const committed = await tx.expense.update({
       where: { id: expense.id },
       data: {
         status: "COMMITTED",
         committedAt: now,
         ruleVersionId: accepted.id,
       },
+    });
+
+    for (const line of result.lines) {
+      await applyPendingEqualCover(tx, {
+        cycleId: expense.cycleId,
+        membershipId: line.membershipId,
+      });
+    }
+
+    const updated = await tx.expense.findUniqueOrThrow({
+      where: { id: committed.id },
       include: {
         allocations: true,
         participants: true,

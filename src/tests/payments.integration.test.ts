@@ -2,10 +2,7 @@
  * @vitest-environment node
  */
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { PrismaBetterSqlite3 } from "@prisma/adapter-better-sqlite3";
-import { PrismaClient } from "@/generated/prisma/client";
-import { resolveSqliteUrl } from "@/lib/db";
-import { getDatabaseUrl } from "@/lib/env";
+import { prisma } from "@/lib/db";
 import { DEMO } from "../../prisma/demo-ids";
 import {
   confirmPaymentSubmission,
@@ -14,11 +11,6 @@ import {
 } from "@/server/services/payments";
 import { getMembershipBalances } from "@/server/services/balances";
 import { getCategoryReportSlices } from "@/server/services/reports";
-
-const adapter = new PrismaBetterSqlite3({
-  url: resolveSqliteUrl(getDatabaseUrl()),
-});
-const prisma = new PrismaClient({ adapter });
 
 describe("payment pending → confirm (integration against seeded DB)", () => {
   beforeAll(async () => {

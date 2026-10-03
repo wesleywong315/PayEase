@@ -73,14 +73,9 @@ export default async function PayAidPage({ params }: PageProps) {
     );
   }
 
-  const [fundingReceived, fundingPledged, pendingRequests] = await Promise.all([
+  const [fundingReceived, pendingRequests] = await Promise.all([
     prisma.hardshipFunding.aggregate({
       where: { cycleId: openCycle.id, kind: "RECEIVED" },
-      _sum: { amountCents: true },
-      _count: true,
-    }),
-    prisma.hardshipFunding.aggregate({
-      where: { cycleId: openCycle.id, kind: "PLEDGED" },
       _sum: { amountCents: true },
       _count: true,
     }),
@@ -123,16 +118,6 @@ export default async function PayAidPage({ params }: PageProps) {
               />
             ),
             hint: `${fundingReceived._count} record${fundingReceived._count === 1 ? "" : "s"}`,
-          },
-          {
-            label: "Funding pledged",
-            value: (
-              <MoneyText
-                cents={fundingPledged._sum.amountCents ?? 0}
-                label="Funding pledged"
-              />
-            ),
-            hint: `${fundingPledged._count} record${fundingPledged._count === 1 ? "" : "s"}`,
           },
           {
             label: "Pending cap requests",

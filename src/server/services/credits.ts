@@ -1,7 +1,7 @@
-import "server-only";
-
 import { prisma } from "@/lib/db";
 import { DomainError } from "@/server/services/communities";
+import { creditEqualCoverToActiveMembers } from "@/server/services/equal-cover";
+import { requireFeatureEnabled } from "@/server/services/ledger";
 
 export async function listCreditCategories(
   communityId: string,
@@ -108,6 +108,8 @@ export async function createCredit(input: {
   categoryLabel: string;
   isOneTimeCategory: boolean;
   amountCents: number;
+  equalCoverCents?: number;
+  payAidCents?: number;
   note?: string | null;
   receivedAt?: Date;
   idempotencyKey: string;
@@ -125,6 +127,21 @@ export async function createCredit(input: {
       "Amount must be a positive HKD amount.",
     );
   }
+  const payAidCents = input.payAidCents ?? 0;
+  const equalCoverCents =
+    input.equalCoverCents ?? input.amountCents - payAidCents;
+  if (
+    !Number.isSafeInteger(equalCoverCents) ||
+    !Number.isSafeInteger(payAidCents) ||
+    equalCoverCents < 0 ||
+    payAidCents < 0 ||
+    equalCoverCents + payAidCents !== input.amountCents
+  ) {
+    throw new DomainError(
+      "VALIDATION_ERROR",
+      "Equal-cover and PayAid cents must be non-negative and sum to the credit amount.",
+    );
+  }
 
   const cycle = await prisma.financialCycle.findFirst({
     where: {
@@ -135,6 +152,14 @@ export async function createCredit(input: {
   });
   if (!cycle) {
     throw new DomainError("NOT_FOUND", "Open cycle not found.");
+  }
+
+  if (payAidCents > 0) {
+    await requireFeatureEnabled(
+      input.cycleId,
+      "hardshipEnabled",
+      "PayAid is disabled for the accepted rule, so this credit cannot include a PayAid slice.",
+    );
   }
 
   const categoryFields = await resolveCreditCategoryFields({
@@ -172,12 +197,43 @@ export async function createCredit(input: {
           categoryId: categoryFields.categoryId,
           isOneTimeCategory: categoryFields.isOneTimeCategory,
           amountCents: input.amountCents,
+          equalCoverCents,
+          payAidCents,
+          unallocatedRemainderCents: 0,
           note,
           receivedAt,
           recordedByMembershipId: input.actorMembershipId,
           cashTransactionId: cash.id,
         },
       });
+
+      const { unallocatedRemainderCents } =
+        await creditEqualCoverToActiveMembers(tx, {
+          communityId: input.communityId,
+          cycleId: input.cycleId,
+          equalCoverCents,
+        });
+
+      if (unallocatedRemainderCents !== 0) {
+        await tx.credit.update({
+          where: { id: credit.id },
+          data: { unallocatedRemainderCents },
+        });
+      }
+
+      if (payAidCents > 0) {
+        await tx.hardshipFunding.create({
+          data: {
+            cycleId: input.cycleId,
+            kind: "RECEIVED",
+            amountCents: payAidCents,
+            note: note ?? `PayAid slice of ${title}`,
+            recordedByMembershipId: input.actorMembershipId,
+            cashTransactionId: null,
+            creditId: credit.id,
+          },
+        });
+      }
 
       await tx.auditEvent.create({
         data: {
@@ -190,12 +246,14 @@ export async function createCredit(input: {
           payloadJson: JSON.stringify({
             title,
             amountCents: input.amountCents,
+            equalCoverCents,
+            payAidCents,
             category: categoryFields.category,
           }),
         },
       });
 
-      return credit;
+      return tx.credit.findUniqueOrThrow({ where: { id: credit.id } });
     });
   } catch (err) {
     if (

@@ -19,6 +19,7 @@ export type MemberReceivableRow = {
   contributionOutstandingCents: number;
   reimbursementOutstandingCents: number;
   refundDueCents: number;
+  unusedEqualCoverCents: number;
   charges: ChargeLine[];
 };
 
@@ -97,6 +98,14 @@ export async function getCoordinatorReceivables(input: {
     chargesByMember.set(row.membershipId, list);
   }
 
+  const covers = await prisma.membershipEqualCover.findMany({
+    where: { cycleId: input.cycleId, membershipId: { in: membershipIds } },
+    select: { membershipId: true, remainingCents: true },
+  });
+  const coverByMember = new Map(
+    covers.map((row) => [row.membershipId, row.remainingCents]),
+  );
+
   return members.map((m) => {
     const balance = balances.get(m.id);
     return {
@@ -109,6 +118,7 @@ export async function getCoordinatorReceivables(input: {
       reimbursementOutstandingCents:
         balance?.reimbursementOutstandingCents ?? 0,
       refundDueCents: balance?.refundDueCents ?? 0,
+      unusedEqualCoverCents: coverByMember.get(m.id) ?? 0,
       charges: chargesByMember.get(m.id) ?? [],
     };
   });
