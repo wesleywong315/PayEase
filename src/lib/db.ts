@@ -45,7 +45,6 @@ export function createPrismaClient(
       globalForPrisma.pgPool ??
       new Pool({
         connectionString: databaseUrl,
-        // Supabase transaction pooler (port 6543) often needs this.
         max: 10,
       });
     if (process.env.NODE_ENV !== "production") {
@@ -61,8 +60,20 @@ export function createPrismaClient(
   return new PrismaClient({ adapter });
 }
 
-export const prisma = globalForPrisma.prisma ?? createPrismaClient();
-
-if (process.env.NODE_ENV !== "production") {
-  globalForPrisma.prisma = prisma;
+function getCachedPrisma(): PrismaClient {
+  const existing = globalForPrisma.prisma;
+  if (
+    existing &&
+    typeof (existing as { membershipEqualCover?: unknown }).membershipEqualCover !==
+      "undefined"
+  ) {
+    return existing;
+  }
+  const client = createPrismaClient();
+  if (process.env.NODE_ENV !== "production") {
+    globalForPrisma.prisma = client;
+  }
+  return client;
 }
+
+export const prisma = getCachedPrisma();

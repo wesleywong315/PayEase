@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import Link from "next/link";
+import { LandingTagline } from "@/components/LandingTagline";
 import { Logo } from "@/components/Logo";
 import { getSessionUser } from "@/server/auth/current-user";
 
@@ -17,18 +18,16 @@ export default async function LandingPage() {
         <Logo
           invert
           showWordmark={false}
-          className="self-start"
+          className="landing-rise self-start"
           markClassName="h-12 w-12"
         />
 
-        <div className="space-y-4">
+        <div className="landing-rise landing-rise-delay-1 space-y-4">
           <h1 className="type-h1 text-[#f3efe6]">PayEase</h1>
-          <p className="max-w-xl text-lg text-[#f3efe6]/90 sm:text-xl">
-            Fair shared spending for student teams.
-          </p>
+          <LandingTagline />
         </div>
 
-        <div className="flex flex-wrap gap-3">
+        <div className="landing-rise landing-rise-delay-3 flex flex-wrap gap-3">
           <Link
             href="/login"
             className="focus-ring inline-flex items-center justify-center rounded-full bg-[#f3efe6] px-6 py-3 text-sm font-semibold text-landing transition hover:bg-white"
