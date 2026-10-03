@@ -1,10 +1,15 @@
+// CUTOVER REFERENCE ONLY — not used by prisma.config.ts while developing on SQLite.
+// When switching to Supabase: copy provider/settings into schema.prisma (or point
+// prisma.config at this file), archive sqlite migrations, and create a Postgres baseline.
+// See docs/DEPLOY.md.
+
 generator client {
   provider = "prisma-client"
   output   = "../src/generated/prisma"
 }
 
 datasource db {
-  provider = "sqlite"
+  provider = "postgresql"
 }
 
 enum MembershipRole {
@@ -101,7 +106,6 @@ model Membership {
   userId      String
   role        MembershipRole
   status      MembershipStatus @default(ACTIVE)
-  /// When true, community is hidden from the member's profile Communities list.
   hiddenFromProfile Boolean    @default(false)
   joinedAt    DateTime         @default(now())
   leftAt      DateTime?
@@ -213,7 +217,6 @@ model Category {
   @@unique([communityId, name])
 }
 
-/// Reusable labels for credits (grants / subsidies) — separate from expense Category.
 model CreditCategory {
   id          String    @id @default(cuid())
   communityId String
@@ -227,13 +230,11 @@ model CreditCategory {
   @@unique([communityId, name])
 }
 
-/// Pooled inflow: subsidy, grant, or similar credit into the community finance pool.
 model Credit {
   id                     String   @id @default(cuid())
   communityId            String
   cycleId                String
   title                  String
-  /// Display label (reusable CreditCategory name or one-time label)
   category               String
   categoryId             String?
   isOneTimeCategory      Boolean  @default(false)
