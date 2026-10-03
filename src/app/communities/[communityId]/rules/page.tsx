@@ -1,3 +1,4 @@
+import { AcceptRuleButton } from "@/components/AcceptRuleButton";
 import { EmptyState } from "@/components/EmptyState";
 import { MoneyText } from "@/components/MoneyText";
 import { PageHeader } from "@/components/PageHeader";
@@ -43,6 +44,8 @@ export default async function RulesPage({ params }: PageProps) {
       })
     : [];
 
+  const proposedRule =
+    ruleVersions.find((r) => r.status === "PROPOSED") ?? null;
   const acceptedRule =
     ruleVersions.find((r) => r.status === "ACCEPTED") ?? null;
   const toggles = acceptedRule
@@ -55,7 +58,7 @@ export default async function RulesPage({ params }: PageProps) {
         showBack={false}
         eyebrow={community.name}
         title="Rules"
-        description="Accepted shared-spending rules for the open cycle. New versions capture feature toggles and optional budget caps."
+        description="Propose versions, then every required member accepts. Accepted rules are immutable."
       />
 
       {!openCycle ? (
@@ -65,6 +68,56 @@ export default async function RulesPage({ params }: PageProps) {
         />
       ) : (
         <>
+          {proposedRule ? (
+            <article className="card-surface space-y-4 p-6">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <h2 className="text-xl font-semibold text-ink">
+                    Proposed: {proposedRule.title}
+                  </h2>
+                  <p className="type-caption mt-1">
+                    Version {proposedRule.versionNumber} ·{" "}
+                    {proposedRule.acceptances.length} of{" "}
+                    {(() => {
+                      try {
+                        return (JSON.parse(proposedRule.requiredAcceptorIdsJson) as string[])
+                          .length;
+                      } catch {
+                        return "?";
+                      }
+                    })()}{" "}
+                    required acceptances
+                  </p>
+                </div>
+                <StatusBadge status={proposedRule.status} />
+              </div>
+              <div className="whitespace-pre-wrap text-sm leading-relaxed text-foreground">
+                {proposedRule.bodyMarkdown}
+              </div>
+              <ul className="flex flex-wrap gap-2">
+                {proposedRule.acceptances.map((acceptance) => (
+                  <li
+                    key={acceptance.id}
+                    className="border border-border bg-background px-3 py-1.5 text-sm"
+                  >
+                    {acceptance.membership.user.displayName}
+                  </li>
+                ))}
+              </ul>
+              {membership &&
+              !proposedRule.acceptances.some(
+                (a) => a.membershipId === membership.id,
+              ) ? (
+                <AcceptRuleButton
+                  communityId={communityId}
+                  ruleId={proposedRule.id}
+                />
+              ) : (
+                <p className="type-caption">You have accepted this proposal.</p>
+              )}
+            </article>
+          ) : null}
+
           {!acceptedRule ? (
             <EmptyState
               title="No accepted rule"

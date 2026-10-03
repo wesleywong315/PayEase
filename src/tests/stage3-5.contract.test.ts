@@ -56,13 +56,10 @@ describe("category report slices / donut", () => {
 });
 
 describe("payment method contract", () => {
-  it("only DEMO_SIMULATE is the working method name", () => {
-    const methods = [
-      "DEMO_SIMULATE",
-      "ALIPAY_PLACEHOLDER",
-      "WALLET_PLACEHOLDER",
-    ] as const;
-    expect(methods.filter((m) => m === "DEMO_SIMULATE")).toHaveLength(1);
+  it("tracking-only method is TRACKED", () => {
+    const methods = ["TRACKED"] as const;
+    expect(methods).toEqual(["TRACKED"]);
+    expect(methods).not.toContain("WALLET");
     expect(methods).not.toContain("STRIPE_SUCCESS");
   });
 });

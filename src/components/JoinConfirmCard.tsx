@@ -259,7 +259,7 @@ export function JoinConfirmCard({
             Next: Review rules
           </button>
           <Link
-            href="/communities"
+            href="/profile/communities"
             className="focus-ring rounded-full border border-border px-5 py-2.5 text-sm font-semibold text-ink"
           >
             Cancel

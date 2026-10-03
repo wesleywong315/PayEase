@@ -105,7 +105,11 @@ export function sessionCookieOptions(maxAge = SESSION_TTL_SECONDS) {
 /** Allow only same-origin relative paths for post-login redirects. */
 export function safeNextPath(raw: string | null | undefined): string {
   if (!raw || !raw.startsWith("/") || raw.startsWith("//")) {
-    return "/communities";
+    return "/profile/communities";
+  }
+  // Legacy inbox path
+  if (raw === "/communities" || raw === "/communities/") {
+    return "/profile/communities";
   }
   return raw;
 }

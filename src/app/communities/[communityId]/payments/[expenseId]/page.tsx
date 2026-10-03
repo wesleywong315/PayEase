@@ -140,8 +140,7 @@ export default async function ExpensePaymentPage({ params }: PageProps) {
             <PaymentMethodPanel
               communityId={communityId}
               expenseId={expense.id}
-              defaultAmountCents={Math.min(remainingOnExpense, outstanding)}
-              maxOutstandingCents={outstanding}
+              requiredAmountCents={remainingOnExpense}
             />
           ) : (
             <p className="type-caption rounded-xl border border-border bg-surface px-4 py-3">

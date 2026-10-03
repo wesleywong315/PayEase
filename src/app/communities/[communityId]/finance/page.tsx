@@ -179,10 +179,10 @@ export default async function FinancePage({ params }: PageProps) {
             ) : (
               <ul className="divide-y divide-border overflow-hidden rounded-xl border border-border bg-surface">
                 {expenses.map((expense) => (
-                  <li key={expense.id}>
+                  <li key={expense.id} className="flex items-stretch">
                     <Link
                       href={`/communities/${communityId}/expenses/${expense.id}`}
-                      className="flex items-center justify-between gap-3 px-3 py-2.5 transition-colors hover:bg-canvas/70"
+                      className="flex min-w-0 flex-1 items-center justify-between gap-3 px-3 py-2.5 transition-colors hover:bg-canvas/70"
                     >
                       <div className="min-w-0">
                         <div className="flex flex-wrap items-center gap-2">
@@ -206,6 +206,14 @@ export default async function FinancePage({ params }: PageProps) {
                         className="shrink-0 font-semibold"
                       />
                     </Link>
+                    {isCoordinator && expense.status === "DRAFT" ? (
+                      <Link
+                        href={`/communities/${communityId}/expenses/${expense.id}/edit`}
+                        className="focus-ring flex shrink-0 items-center border-l border-border px-3 text-sm font-semibold text-ink hover:bg-canvas/70"
+                      >
+                        Edit
+                      </Link>
+                    ) : null}
                   </li>
                 ))}
               </ul>

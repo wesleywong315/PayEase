@@ -1,4 +1,3 @@
-import "server-only";
 import { allocate } from "@/lib/allocation";
 import { prisma } from "@/lib/db";
 import type { FeatureToggles } from "@/lib/feature-toggles";
@@ -6,6 +5,7 @@ import {
   DEFAULT_FEATURE_TOGGLES,
   parseFeatureToggles,
 } from "@/lib/feature-toggles";
+import { findProjectedCapBreaches } from "@/server/services/payaid";
 import { DomainError } from "@/server/services/communities";
 
 export type { FeatureToggles };
@@ -26,10 +26,10 @@ export async function getAcceptedRule(cycleId: string) {
 }
 
 /**
- * Coordinator creates a new ACCEPTED rule version (demo shortcut: auto-accept
- * by all active members so feature toggles / budget cap take effect immediately).
+ * Coordinator proposes a new rule version. Active members at propose time
+ * must each accept before it becomes ACCEPTED.
  */
-export async function proposeAndAcceptRuleVersion(input: {
+export async function proposeRuleVersion(input: {
   communityId: string;
   cycleId: string;
   actorMembershipId: string;
@@ -59,10 +59,23 @@ export async function proposeAndAcceptRuleVersion(input: {
 
   return prisma.$transaction(async (tx) => {
     const cycle = await tx.financialCycle.findFirst({
-      where: { id: input.cycleId, communityId: input.communityId, status: "OPEN" },
+      where: { id: input.cycleId, communityId: input.communityId },
     });
     if (!cycle) {
-      throw new DomainError("NOT_FOUND", "Open cycle not found.");
+      throw new DomainError("NOT_FOUND", "Cycle not found.");
+    }
+    if (cycle.status !== "OPEN") {
+      throw new DomainError("CYCLE_CLOSED", "This cycle is closed and read-only.");
+    }
+
+    const pendingProposed = await tx.ruleVersion.findFirst({
+      where: { cycleId: input.cycleId, status: "PROPOSED" },
+    });
+    if (pendingProposed) {
+      throw new DomainError(
+        "CONFLICT",
+        "A proposed rule is already awaiting acceptance. Finish that vote first.",
+      );
     }
 
     const latest = await tx.ruleVersion.findFirst({
@@ -77,6 +90,9 @@ export async function proposeAndAcceptRuleVersion(input: {
       select: { id: true },
     });
     const acceptorIds = activeMembers.map((m) => m.id);
+    if (acceptorIds.length === 0) {
+      throw new DomainError("PRECONDITION_FAILED", "No active members to accept this rule.");
+    }
     const now = new Date();
 
     const rule = await tx.ruleVersion.create({
@@ -84,7 +100,7 @@ export async function proposeAndAcceptRuleVersion(input: {
         communityId: input.communityId,
         cycleId: input.cycleId,
         versionNumber,
-        status: "ACCEPTED",
+        status: "PROPOSED",
         title,
         bodyMarkdown: body,
         equalShareFallbackWhenZeroUsage: input.equalShareFallbackWhenZeroUsage,
@@ -93,19 +109,8 @@ export async function proposeAndAcceptRuleVersion(input: {
         requiredAcceptorIdsJson: JSON.stringify(acceptorIds),
         createdByMembershipId: input.actorMembershipId,
         proposedAt: now,
-        acceptedAt: now,
       },
     });
-
-    for (const membershipId of acceptorIds) {
-      await tx.ruleAcceptance.create({
-        data: {
-          ruleVersionId: rule.id,
-          membershipId,
-          acceptedAt: now,
-        },
-      });
-    }
 
     await tx.financialCycle.update({
       where: { id: input.cycleId },
@@ -117,11 +122,12 @@ export async function proposeAndAcceptRuleVersion(input: {
         communityId: input.communityId,
         cycleId: input.cycleId,
         actorMembershipId: input.actorMembershipId,
-        action: "RULE_VERSION_ACCEPTED",
+        action: "RULE_VERSION_PROPOSED",
         entityType: "RuleVersion",
         entityId: rule.id,
         payloadJson: JSON.stringify({
           versionNumber,
+          requiredAcceptorIds: acceptorIds,
           cycleBudgetCapCents: input.cycleBudgetCapCents,
           featureToggles: input.featureToggles,
         }),
@@ -129,6 +135,91 @@ export async function proposeAndAcceptRuleVersion(input: {
     });
 
     return rule;
+  });
+}
+
+export async function acceptProposedRule(input: {
+  communityId: string;
+  ruleId: string;
+  membershipId: string;
+}) {
+  return prisma.$transaction(async (tx) => {
+    const rule = await tx.ruleVersion.findFirst({
+      where: { id: input.ruleId, communityId: input.communityId },
+      include: { acceptances: true, cycle: true },
+    });
+    if (!rule) {
+      throw new DomainError("NOT_FOUND", "Rule not found.");
+    }
+    if (rule.cycle.status !== "OPEN") {
+      throw new DomainError("CYCLE_CLOSED", "This cycle is closed and read-only.");
+    }
+    if (rule.status !== "PROPOSED") {
+      throw new DomainError("RULE_NOT_PROPOSED", "Only a proposed rule can be accepted.");
+    }
+
+    let required: string[] = [];
+    try {
+      required = JSON.parse(rule.requiredAcceptorIdsJson) as string[];
+    } catch {
+      required = [];
+    }
+    if (!required.includes(input.membershipId)) {
+      throw new DomainError(
+        "FORBIDDEN",
+        "You are not on the snapshot of members required to accept this version.",
+      );
+    }
+
+    const already = rule.acceptances.some((a) => a.membershipId === input.membershipId);
+    if (already) {
+      throw new DomainError("ALREADY_ACCEPTED", "You have already accepted this rule.");
+    }
+
+    const now = new Date();
+    await tx.ruleAcceptance.create({
+      data: {
+        ruleVersionId: rule.id,
+        membershipId: input.membershipId,
+        acceptedAt: now,
+      },
+    });
+
+    const acceptedIds = new Set([
+      ...rule.acceptances.map((a) => a.membershipId),
+      input.membershipId,
+    ]);
+    const complete = required.every((id) => acceptedIds.has(id));
+
+    const updated = complete
+      ? await tx.ruleVersion.update({
+          where: { id: rule.id },
+          data: { status: "ACCEPTED", acceptedAt: now },
+        })
+      : await tx.ruleVersion.findUniqueOrThrow({ where: { id: rule.id } });
+
+    await tx.financialCycle.update({
+      where: { id: rule.cycleId },
+      data: { revision: { increment: 1 } },
+    });
+
+    await tx.auditEvent.create({
+      data: {
+        communityId: input.communityId,
+        cycleId: rule.cycleId,
+        actorMembershipId: input.membershipId,
+        action: complete ? "RULE_VERSION_ACCEPTED" : "RULE_ACCEPTANCE_RECORDED",
+        entityType: "RuleVersion",
+        entityId: rule.id,
+        payloadJson: JSON.stringify({
+          complete,
+          acceptedCount: acceptedIds.size,
+          requiredCount: required.length,
+        }),
+      },
+    });
+
+    return updated;
   });
 }
 
@@ -267,10 +358,13 @@ export async function createDraftExpense(input: ExpenseDraftInput) {
 
   return prisma.$transaction(async (tx) => {
     const cycle = await tx.financialCycle.findFirst({
-      where: { id: input.cycleId, communityId: input.communityId, status: "OPEN" },
+      where: { id: input.cycleId, communityId: input.communityId },
     });
     if (!cycle) {
       throw new DomainError("NOT_FOUND", "Open cycle not found.");
+    }
+    if (cycle.status !== "OPEN") {
+      throw new DomainError("CYCLE_CLOSED", "This cycle is closed and read-only.");
     }
     if (cycle.revision !== input.cycleRevision) {
       throw new DomainError(
@@ -339,11 +433,128 @@ export async function createDraftExpense(input: ExpenseDraftInput) {
   });
 }
 
+export async function updateDraftExpense(
+  input: Omit<ExpenseDraftInput, "cycleId"> & { expenseId: string },
+) {
+  const title = input.title.trim();
+  if (title.length < 2 || title.length > 120) {
+    throw new DomainError("VALIDATION_ERROR", "Title must be 2–120 characters.");
+  }
+  if (!input.dueAt || Number.isNaN(input.dueAt.getTime())) {
+    throw new DomainError("VALIDATION_ERROR", "A due date is required for payable expenses.");
+  }
+  const usageLabel = input.usageLabel.trim() || "Usage units";
+  const categoryFields = await resolveCategoryFields(input);
+
+  previewExpenseAllocation({
+    fixedCents: input.fixedCents,
+    variableCents: input.variableCents,
+    participants: input.participants,
+  });
+
+  return prisma.$transaction(async (tx) => {
+    const expense = await tx.expense.findFirst({
+      where: { id: input.expenseId, communityId: input.communityId },
+      include: { cycle: true },
+    });
+    if (!expense) {
+      throw new DomainError("NOT_FOUND", "Expense not found.");
+    }
+    if (expense.status !== "DRAFT") {
+      throw new DomainError("CONFLICT", "Only draft expenses can be edited.");
+    }
+    if (expense.cycle.status !== "OPEN") {
+      throw new DomainError("PRECONDITION_FAILED", "Cycle is closed.");
+    }
+    if (expense.cycle.revision !== input.cycleRevision) {
+      throw new DomainError(
+        "STALE_REVISION",
+        "Cycle changed since you loaded the form. Refresh and try again.",
+        { currentRevision: expense.cycle.revision },
+      );
+    }
+
+    const accepted = await tx.ruleVersion.findFirst({
+      where: { cycleId: expense.cycleId, status: "ACCEPTED" },
+      orderBy: { versionNumber: "desc" },
+    });
+    if (!accepted) {
+      throw new DomainError("PRECONDITION_FAILED", "An accepted rule is required before expenses.");
+    }
+
+    const membershipIds = input.participants.map((p) => p.membershipId);
+    const members = await tx.membership.findMany({
+      where: {
+        id: { in: membershipIds },
+        communityId: input.communityId,
+        status: "ACTIVE",
+      },
+    });
+    if (members.length !== membershipIds.length) {
+      throw new DomainError(
+        "VALIDATION_ERROR",
+        "All participants must be active members of this community.",
+      );
+    }
+
+    await tx.expenseParticipant.deleteMany({
+      where: { expenseId: expense.id },
+    });
+
+    const updated = await tx.expense.update({
+      where: { id: expense.id },
+      data: {
+        ruleVersionId: accepted.id,
+        title,
+        category: categoryFields.category,
+        categoryId: categoryFields.categoryId,
+        isOneTimeCategory: categoryFields.isOneTimeCategory,
+        fixedCents: input.fixedCents,
+        variableCents: input.variableCents,
+        totalCents: input.fixedCents + input.variableCents,
+        usageLabel,
+        dueAt: input.dueAt,
+        frontedByMembershipId: input.frontedByMembershipId,
+        needsRevision: false,
+        participants: {
+          create: input.participants.map((p) => ({
+            membershipId: p.membershipId,
+            usageUnits: p.usageUnits,
+          })),
+        },
+      },
+      include: { participants: true },
+    });
+
+    await tx.financialCycle.update({
+      where: { id: expense.cycleId },
+      data: { revision: { increment: 1 } },
+    });
+
+    await tx.auditEvent.create({
+      data: {
+        communityId: input.communityId,
+        cycleId: expense.cycleId,
+        actorMembershipId: input.actorMembershipId,
+        action: "EXPENSE_DRAFT_UPDATED",
+        entityType: "Expense",
+        entityId: expense.id,
+        payloadJson: JSON.stringify({
+          totalCents: updated.totalCents,
+        }),
+      },
+    });
+
+    return updated;
+  });
+}
+
 export async function commitExpense(input: {
   communityId: string;
   expenseId: string;
   actorMembershipId: string;
   cycleRevision: number;
+  acknowledgeProjectedCapBreaches?: boolean;
 }) {
   return prisma.$transaction(async (tx) => {
     const expense = await tx.expense.findFirst({
@@ -357,7 +568,7 @@ export async function commitExpense(input: {
       throw new DomainError("CONFLICT", "Only draft expenses can be committed.");
     }
     if (expense.cycle.status !== "OPEN") {
-      throw new DomainError("PRECONDITION_FAILED", "Cycle is closed.");
+      throw new DomainError("CYCLE_CLOSED", "This cycle is closed and read-only.");
     }
     if (expense.cycle.revision !== input.cycleRevision) {
       throw new DomainError(
@@ -418,6 +629,21 @@ export async function commitExpense(input: {
         usageUnits: p.usageUnits,
       })),
     });
+
+    const breaches = await findProjectedCapBreaches({
+      cycleId: expense.cycleId,
+      additionalBaselines: result.lines.map((line) => ({
+        membershipId: line.membershipId,
+        baselineCents: line.baselineCents,
+      })),
+    });
+    if (breaches.length > 0 && !input.acknowledgeProjectedCapBreaches) {
+      throw new DomainError(
+        "CAP_BREACH_ACK_REQUIRED",
+        "Committing would put one or more members over a pending or approved contribution cap. Acknowledge to continue.",
+        { breaches },
+      );
+    }
 
     const now = new Date();
     for (const line of result.lines) {

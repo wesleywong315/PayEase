@@ -82,8 +82,8 @@ export function PendingPaymentsPanel({ communityId }: PendingPaymentsPanelProps)
           Pending payment confirmations
         </h2>
         <p className="type-caption mt-1">
-          Demo submissions only. Confirming writes a contribution cash
-          transaction; rejecting leaves the ledger unchanged.
+          Members record off-app payments here. Confirming updates the tracking
+          ledger; rejecting leaves balances unchanged.
         </p>
       </div>
 

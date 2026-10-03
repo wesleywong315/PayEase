@@ -106,6 +106,7 @@ model Membership {
   userId      String
   role        MembershipRole
   status      MembershipStatus @default(ACTIVE)
+  hiddenFromProfile Boolean    @default(false)
   joinedAt    DateTime         @default(now())
   leftAt      DateTime?
 
@@ -422,7 +423,7 @@ model PaymentSubmission {
   expenseId               String?
   membershipId            String
   amountCents             Int
-  /// DEMO_SIMULATE | ALIPAY_PLACEHOLDER | WALLET_PLACEHOLDER
+  /// TRACKED — off-app payment recorded for coordinator confirmation
   method                  String
   status                  PaymentSubmissionStatus @default(PENDING_CONFIRMATION)
   note                    String?

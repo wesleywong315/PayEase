@@ -67,7 +67,7 @@ export default async function PaymentsPage({ params }: PageProps) {
         showBack={false}
         eyebrow={community.name}
         title={isCoordinator ? "Payments" : "My payments"}
-        description="Overdue and due-soon ribbons. Demo / Simulate is the only working payment method — Alipay and Wallet are coming soon."
+        description="Track overdue and due-soon charges. Record off-app payments for coordinator confirmation — PayEase does not process money."
       />
 
       {!openCycle ? (
@@ -93,15 +93,13 @@ export default async function PaymentsPage({ params }: PageProps) {
             <PaymentRibbonList communityId={communityId} ribbons={ribbons} />
           </section>
 
-          {primaryExpenseId && outstanding > 0 ? (
+          {primaryExpenseId &&
+          outstanding > 0 &&
+          (ribbons[0]?.outstandingCents ?? 0) > 0 ? (
             <PaymentMethodPanel
               communityId={communityId}
               expenseId={primaryExpenseId}
-              defaultAmountCents={Math.min(
-                ribbons[0]?.outstandingCents ?? outstanding,
-                outstanding,
-              )}
-              maxOutstandingCents={outstanding}
+              requiredAmountCents={ribbons[0]!.outstandingCents}
             />
           ) : null}
 

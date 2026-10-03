@@ -1,3 +1,8 @@
+import {
+  PayAidCapRequestForm,
+  PayAidDecideButtons,
+  PayAidFundingForm,
+} from "@/components/PayAidForms";
 import { EmptyState } from "@/components/EmptyState";
 import { MoneyText } from "@/components/MoneyText";
 import { PageHeader } from "@/components/PageHeader";
@@ -136,6 +141,9 @@ export default async function PayAidPage({ params }: PageProps) {
         ]}
       />
 
+      {isCoordinator ? <PayAidFundingForm communityId={communityId} /> : null}
+      {membership ? <PayAidCapRequestForm communityId={communityId} /> : null}
+
       <section aria-labelledby="pending-caps-heading" className="space-y-3">
         <h2 id="pending-caps-heading" className="text-xl font-semibold">
           Pending contribution caps
@@ -191,6 +199,14 @@ export default async function PayAidPage({ params }: PageProps) {
                     <p className="mt-2 text-sm text-foreground">
                       {request.explanation}
                     </p>
+                    {isCoordinator ? (
+                      <div className="mt-3">
+                        <PayAidDecideButtons
+                          communityId={communityId}
+                          requestId={request.id}
+                        />
+                      </div>
+                    ) : null}
                   </div>
                   <StatusBadge status={request.status} />
                 </li>

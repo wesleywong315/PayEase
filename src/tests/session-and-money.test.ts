@@ -34,10 +34,11 @@ describe("demo session tokens", () => {
 
 describe("safeNextPath", () => {
   it("allows relative destinations and rejects open redirects", () => {
-    expect(safeNextPath("/communities")).toBe("/communities");
+    expect(safeNextPath("/communities")).toBe("/profile/communities");
+    expect(safeNextPath("/profile/communities")).toBe("/profile/communities");
     expect(safeNextPath("/join/abc")).toBe("/join/abc");
-    expect(safeNextPath("https://evil.test")).toBe("/communities");
-    expect(safeNextPath("//evil.test")).toBe("/communities");
-    expect(safeNextPath(null)).toBe("/communities");
+    expect(safeNextPath("https://evil.test")).toBe("/profile/communities");
+    expect(safeNextPath("//evil.test")).toBe("/profile/communities");
+    expect(safeNextPath(null)).toBe("/profile/communities");
   });
 });

@@ -1,4 +1,5 @@
 import { notFound } from "next/navigation";
+import Link from "next/link";
 import { AllocationPreviewTable } from "@/components/AllocationPreviewTable";
 import { CommitExpenseButton } from "@/components/CommitExpenseButton";
 import { MoneyText } from "@/components/MoneyText";
@@ -108,7 +109,19 @@ export default async function ExpenseDetailPage({ params }: PageProps) {
         eyebrow={community.name}
         title={expense.title}
         description={`${expense.category} · Usage label: ${expense.usageLabel}`}
-        actions={<StatusBadge status={expense.status} />}
+        actions={
+          <div className="flex flex-wrap items-center gap-2">
+            <StatusBadge status={expense.status} />
+            {expense.status === "DRAFT" && isCoordinator ? (
+              <Link
+                href={`/communities/${communityId}/expenses/${expense.id}/edit`}
+                className="focus-ring rounded-full border border-border bg-surface px-4 py-2 text-sm font-semibold text-ink hover:border-primary/40"
+              >
+                Edit
+              </Link>
+            ) : null}
+          </div>
+        }
       />
 
       <dl className="grid gap-4 border border-border bg-surface p-4 sm:grid-cols-4">
@@ -151,11 +164,19 @@ export default async function ExpenseDetailPage({ params }: PageProps) {
       </p>
 
       {expense.status === "DRAFT" && isCoordinator && openCycle ? (
-        <CommitExpenseButton
-          communityId={communityId}
-          expenseId={expense.id}
-          cycleRevision={openCycle.revision}
-        />
+        <div className="flex flex-wrap items-start gap-3">
+          <Link
+            href={`/communities/${communityId}/expenses/${expense.id}/edit`}
+            className="focus-ring rounded-full border border-border bg-surface px-5 py-2.5 text-sm font-semibold text-ink hover:border-primary/40"
+          >
+            Edit draft
+          </Link>
+          <CommitExpenseButton
+            communityId={communityId}
+            expenseId={expense.id}
+            cycleRevision={openCycle.revision}
+          />
+        </div>
       ) : null}
 
       {expense.status === "COMMITTED" ? (

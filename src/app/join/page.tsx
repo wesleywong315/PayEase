@@ -17,7 +17,7 @@ export default async function JoinHelperPage() {
         eyebrow="Invitations"
         title="Join a community"
         description="Paste a link/token or scan a QR code. Confirmation never exposes community finances before you join."
-        backHref={user ? "/communities" : "/login"}
+        backHref={user ? "/profile/communities" : "/login"}
         backLabel={user ? "Back to My communities" : "Back to login"}
       />
 

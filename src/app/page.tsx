@@ -8,7 +8,7 @@ export const dynamic = "force-dynamic";
 export default async function LandingPage() {
   const user = await getSessionUser();
   if (user) {
-    redirect("/communities");
+    redirect("/profile/communities");
   }
 
   return (

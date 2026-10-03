@@ -1,10 +1,29 @@
 import { DomainError } from "@/server/services/communities";
+import { requireFeatureEnabled, requireOpenCycle } from "@/server/services/ledger";
 import { getMembershipBalances } from "@/server/services/balances";
 import { prisma } from "@/lib/db";
 
 // Note: this module is imported by Vitest integration tests; keep free of `server-only`.
 
 const DUE_SOON_MS = 7 * 24 * 60 * 60 * 1000;
+
+/** Remaining charge on one expense for a membership (full amount still owed). */
+async function getRemainingChargeOnExpense(input: {
+  membershipId: string;
+  expenseId: string;
+  finalChargeCents: number;
+}): Promise<number> {
+  const paidAgg = await prisma.cashTransaction.aggregate({
+    where: {
+      membershipId: input.membershipId,
+      expenseId: input.expenseId,
+      type: "MEMBER_CONTRIBUTION",
+    },
+    _sum: { amountCents: true },
+  });
+  const paid = paidAgg._sum.amountCents ?? 0;
+  return Math.max(0, input.finalChargeCents - paid);
+}
 
 export type PaymentRibbon = {
   expenseId: string;
@@ -132,24 +151,31 @@ export async function getMemberPaymentRibbons(input: {
     });
 }
 
-export async function submitDemoPayment(input: {
+/**
+ * Record that a member paid a charge off-app (tracking only — no money moves here).
+ * Stays pending until a coordinator confirms, which writes the cash ledger row.
+ */
+export async function submitTrackedPayment(input: {
   communityId: string;
   cycleId: string;
   membershipId: string;
   expenseId: string;
   amountCents: number;
-  method: "DEMO_SIMULATE" | "ALIPAY_PLACEHOLDER" | "WALLET_PLACEHOLDER";
   note?: string | null;
 }) {
-  if (input.method !== "DEMO_SIMULATE") {
-    throw new DomainError(
-      "NOT_IMPLEMENTED",
-      "This payment method is coming soon. Use Demo / Simulate payment.",
-    );
-  }
   if (!Number.isInteger(input.amountCents) || input.amountCents <= 0) {
     throw new DomainError("VALIDATION_ERROR", "Amount must be a positive integer (cents).");
   }
+
+  await requireOpenCycle({
+    communityId: input.communityId,
+    cycleId: input.cycleId,
+  });
+  await requireFeatureEnabled(
+    input.cycleId,
+    "contributionsEnabled",
+    "Contributions are disabled for the accepted rule.",
+  );
 
   const expense = await prisma.expense.findFirst({
     where: {
@@ -173,6 +199,28 @@ export async function submitDemoPayment(input: {
   });
   if (!allocation) {
     throw new DomainError("FORBIDDEN", "You are not allocated on this expense.");
+  }
+
+  const remainingOnExpense = await getRemainingChargeOnExpense({
+    membershipId: input.membershipId,
+    expenseId: input.expenseId,
+    finalChargeCents: allocation.finalChargeCents,
+  });
+  if (remainingOnExpense <= 0) {
+    throw new DomainError(
+      "VALIDATION_ERROR",
+      "This expense charge is already paid in full.",
+    );
+  }
+  if (input.amountCents !== remainingOnExpense) {
+    throw new DomainError(
+      "VALIDATION_ERROR",
+      "Charges must be paid in full. Partial payments are not allowed.",
+      {
+        requiredCents: remainingOnExpense,
+        providedCents: input.amountCents,
+      },
+    );
   }
 
   const balances = await getMembershipBalances([input.membershipId]);
@@ -210,7 +258,7 @@ export async function submitDemoPayment(input: {
       expenseId: input.expenseId,
       membershipId: input.membershipId,
       amountCents: input.amountCents,
-      method: input.method,
+      method: "TRACKED",
       status: "PENDING_CONFIRMATION",
       note: input.note?.trim() || null,
       expectedOutstandingCents: outstanding,
@@ -226,13 +274,14 @@ export async function submitDemoPayment(input: {
     data: {
       communityId: input.communityId,
       kind: "PAYMENT_SUBMITTED",
-      title: "Payment submitted for confirmation",
-      body: `${member.user.displayName} submitted HK$${(input.amountCents / 100).toFixed(2)} for “${expense.title}” (demo — not a real payment).`,
+      title: "Payment recorded for confirmation",
+      body: `${member.user.displayName} recorded HK$${(input.amountCents / 100).toFixed(2)} for “${expense.title}” (tracking only — awaiting coordinator confirmation).`,
       payloadJson: JSON.stringify({
         submissionId: submission.id,
         expenseId: expense.id,
         membershipId: input.membershipId,
         amountCents: input.amountCents,
+        method: "TRACKED",
       }),
     },
   });
@@ -256,6 +305,9 @@ export async function confirmPaymentSubmission(input: {
     });
     if (!submission || submission.expense?.communityId !== input.communityId) {
       throw new DomainError("NOT_FOUND", "Payment submission not found.");
+    }
+    if (submission.cycle.status !== "OPEN") {
+      throw new DomainError("CYCLE_CLOSED", "This cycle is closed and read-only.");
     }
     if (submission.status !== "PENDING_CONFIRMATION") {
       throw new DomainError(
@@ -298,7 +350,7 @@ export async function confirmPaymentSubmission(input: {
         membershipId: submission.membershipId,
         expenseId: submission.expenseId,
         idempotencyKey,
-        note: `Confirmed demo payment ${submission.id}`,
+        note: `Confirmed tracked payment ${submission.id}`,
         manuallyConfirmed: true,
         recordedByMembershipId: input.actorMembershipId,
       },
@@ -324,7 +376,7 @@ export async function confirmPaymentSubmission(input: {
         communityId: input.communityId,
         kind: "PAYMENT_CONFIRMED",
         title: "Payment confirmed",
-        body: `Confirmed ${submission.membership.user.displayName}'s demo payment of HK$${(submission.amountCents / 100).toFixed(2)}${submission.expense ? ` for “${submission.expense.title}”` : ""}.`,
+        body: `Confirmed ${submission.membership.user.displayName}'s recorded payment of HK$${(submission.amountCents / 100).toFixed(2)}${submission.expense ? ` for “${submission.expense.title}”` : ""}.`,
         payloadJson: JSON.stringify({
           submissionId: submission.id,
           cashTransactionId: cash.id,
@@ -387,7 +439,7 @@ export async function rejectPaymentSubmission(input: {
       communityId: input.communityId,
       kind: "PAYMENT_REJECTED",
       title: "Payment rejected",
-      body: `Rejected ${submission.membership.user.displayName}'s demo payment${submission.expense ? ` for “${submission.expense.title}”` : ""}. Ledger unchanged.`,
+      body: `Rejected ${submission.membership.user.displayName}'s recorded payment${submission.expense ? ` for “${submission.expense.title}”` : ""}. Ledger unchanged.`,
       payloadJson: JSON.stringify({ submissionId: submission.id }),
     },
   });

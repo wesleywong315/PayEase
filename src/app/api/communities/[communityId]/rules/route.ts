@@ -1,14 +1,14 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
+import { mapDomainError } from "@/server/auth/map-domain-error";
 import {
   apiError,
   requireApiUser,
   requireCommunityCoordinator,
 } from "@/server/auth/permissions";
-import { DomainError } from "@/server/services/communities";
 import {
   DEFAULT_FEATURE_TOGGLES,
-  proposeAndAcceptRuleVersion,
+  proposeRuleVersion,
 } from "@/server/services/expenses";
 import { getOpenCycle } from "@/lib/community";
 
@@ -48,7 +48,7 @@ export async function POST(req: Request, ctx: RouteCtx) {
   }
 
   try {
-    const rule = await proposeAndAcceptRuleVersion({
+    const rule = await proposeRuleVersion({
       communityId,
       cycleId: cycle.id,
       actorMembershipId: coord.membership.id,
@@ -56,10 +56,6 @@ export async function POST(req: Request, ctx: RouteCtx) {
     });
     return NextResponse.json({ rule }, { status: 201 });
   } catch (err) {
-    if (err instanceof DomainError) {
-      return apiError(400, err.code, err.message, err.details);
-    }
-    console.error(err);
-    return apiError(500, "INTERNAL", "Unexpected server error.");
+    return mapDomainError(err);
   }
 }

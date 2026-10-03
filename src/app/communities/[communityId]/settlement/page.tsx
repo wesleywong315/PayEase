@@ -1,8 +1,12 @@
 import { EmptyState } from "@/components/EmptyState";
 import { MoneyText } from "@/components/MoneyText";
 import { PageHeader } from "@/components/PageHeader";
-import { getCommunityOrNotFound, getOpenCycle } from "@/lib/community";
+import { SettlementCashForm } from "@/components/SettlementCashForm";
+import { getCommunityOrNotFound, getCurrentCycle } from "@/lib/community";
 import { prisma } from "@/lib/db";
+import { getSessionUser } from "@/server/auth/current-user";
+import { getActiveMembership } from "@/server/auth/permissions";
+import { getSettlementRows } from "@/server/services/reports";
 
 export const dynamic = "force-dynamic";
 
@@ -13,72 +17,56 @@ type PageProps = {
 export default async function SettlementPage({ params }: PageProps) {
   const { communityId } = await params;
   const community = await getCommunityOrNotFound(communityId);
-  const openCycle = await getOpenCycle(communityId);
+  const cycle = await getCurrentCycle(communityId);
+  const user = await getSessionUser();
+  const membership = user
+    ? await getActiveMembership(communityId, user.id)
+    : null;
+  const isCoordinator = membership?.role === "COORDINATOR";
 
-  if (!openCycle) {
+  if (!cycle || !membership) {
     return (
       <div className="space-y-8">
         <PageHeader
-        showBack={false}
+          showBack={false}
           eyebrow={community.name}
           title="Settlement"
-          description="Per-member final charges from committed allocations."
+          description="Per-member charges and outstanding balances."
         />
-        <EmptyState title="No open cycle" />
+        <EmptyState title={!cycle ? "No cycle" : "Members only"} />
       </div>
     );
   }
 
-  const allocations = await prisma.allocation.findMany({
-    where: {
-      expense: {
-        communityId,
-        cycleId: openCycle.id,
-        status: "COMMITTED",
-      },
-    },
-    include: {
-      membership: {
-        include: { user: { select: { displayName: true } } },
-      },
-    },
+  const { rows, treasurerCashCents } = await getSettlementRows({
+    communityId,
+    cycleId: cycle.id,
+    viewerMembershipId: membership.id,
+    isCoordinator: Boolean(isCoordinator),
   });
 
-  const byMember = new Map<
-    string,
-    {
-      name: string;
-      baselineCents: number;
-      hardshipAppliedCents: number;
-      finalChargeCents: number;
-    }
-  >();
-
-  for (const row of allocations) {
-    const existing = byMember.get(row.membershipId) ?? {
-      name: row.membership.user.displayName,
-      baselineCents: 0,
-      hardshipAppliedCents: 0,
-      finalChargeCents: 0,
-    };
-    existing.baselineCents += row.baselineCents;
-    existing.hardshipAppliedCents += row.hardshipAppliedCents;
-    existing.finalChargeCents += row.finalChargeCents;
-    byMember.set(row.membershipId, existing);
-  }
-
-  const rows = Array.from(byMember.entries())
-    .map(([membershipId, data]) => ({ membershipId, ...data }))
-    .sort((a, b) => a.name.localeCompare(b.name));
+  const cashMembers = isCoordinator
+    ? await prisma.membership.findMany({
+        where: { communityId, status: { in: ["ACTIVE", "LEFT"] } },
+        include: { user: { select: { displayName: true } } },
+        orderBy: { joinedAt: "asc" },
+      })
+    : [];
 
   return (
     <div className="space-y-8">
       <PageHeader
         showBack={false}
-        eyebrow={openCycle.name}
+        eyebrow={cycle.name}
         title="Settlement"
-        description="Aggregated final charges from committed expense allocations. Contribution and refund workflows arrive later."
+        description="Committed charges, PayAid applied, and outstanding contribution/reimbursement. Tracking ledger only."
       />
+
+      <p className="text-sm">
+        Treasurer cash:{" "}
+        <MoneyText cents={treasurerCashCents} className="font-semibold" />
+        {cycle.status === "CLOSED" ? " · Cycle closed" : ""}
+      </p>
 
       {rows.length === 0 ? (
         <EmptyState
@@ -89,7 +77,7 @@ export default async function SettlementPage({ params }: PageProps) {
         <div className="overflow-x-auto border border-border bg-surface">
           <table className="min-w-full text-left text-sm">
             <caption className="sr-only">
-              Per-member settlement for {openCycle.name}
+              Per-member settlement for {cycle.name}
             </caption>
             <thead className="border-b border-border bg-background text-xs uppercase tracking-wide text-muted">
               <tr>
@@ -105,6 +93,12 @@ export default async function SettlementPage({ params }: PageProps) {
                 <th scope="col" className="px-4 py-3 font-semibold">
                   Final charge
                 </th>
+                <th scope="col" className="px-4 py-3 font-semibold">
+                  Contribution due
+                </th>
+                <th scope="col" className="px-4 py-3 font-semibold">
+                  Reimbursement due
+                </th>
               </tr>
             </thead>
             <tbody>
@@ -114,7 +108,7 @@ export default async function SettlementPage({ params }: PageProps) {
                   className="border-b border-border last:border-0"
                 >
                   <th scope="row" className="px-4 py-3 font-medium">
-                    {row.name}
+                    {row.displayName}
                   </th>
                   <td className="px-4 py-3">
                     <MoneyText cents={row.baselineCents} />
@@ -125,12 +119,28 @@ export default async function SettlementPage({ params }: PageProps) {
                   <td className="px-4 py-3 font-semibold">
                     <MoneyText cents={row.finalChargeCents} />
                   </td>
+                  <td className="px-4 py-3">
+                    <MoneyText cents={row.contributionOutstandingCents} />
+                  </td>
+                  <td className="px-4 py-3">
+                    <MoneyText cents={row.reimbursementOutstandingCents} />
+                  </td>
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
       )}
+
+      {isCoordinator && cycle.status === "OPEN" ? (
+        <SettlementCashForm
+          communityId={communityId}
+          members={cashMembers.map((m) => ({
+            id: m.id,
+            displayName: m.user.displayName,
+          }))}
+        />
+      ) : null}
     </div>
   );
 }

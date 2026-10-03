@@ -101,6 +101,8 @@ model Membership {
   userId      String
   role        MembershipRole
   status      MembershipStatus @default(ACTIVE)
+  /// When true, community is hidden from the member's profile Communities list.
+  hiddenFromProfile Boolean    @default(false)
   joinedAt    DateTime         @default(now())
   leftAt      DateTime?
 
@@ -420,7 +422,7 @@ model PaymentSubmission {
   expenseId               String?
   membershipId            String
   amountCents             Int
-  /// DEMO_SIMULATE | ALIPAY_PLACEHOLDER | WALLET_PLACEHOLDER
+  /// TRACKED — off-app payment recorded for coordinator confirmation
   method                  String
   status                  PaymentSubmissionStatus @default(PENDING_CONFIRMATION)
   note                    String?

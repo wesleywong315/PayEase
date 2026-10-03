@@ -37,9 +37,43 @@ export function CommitExpenseButton({
               },
             );
             const data = (await response.json()) as {
-              error?: { message?: string };
+              error?: {
+                code?: string;
+                message?: string;
+                details?: { breaches?: unknown[] };
+              };
             };
             if (!response.ok) {
+              if (data.error?.code === "CAP_BREACH_ACK_REQUIRED") {
+                if (
+                  window.confirm(
+                    `${data.error.message ?? "Cap breach."} Commit anyway?`,
+                  )
+                ) {
+                  const retry = await fetch(
+                    `/api/communities/${communityId}/expenses/${expenseId}/commit`,
+                    {
+                      method: "POST",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({
+                        cycleRevision,
+                        acknowledgeProjectedCapBreaches: true,
+                      }),
+                    },
+                  );
+                  const retryData = (await retry.json()) as {
+                    error?: { message?: string };
+                  };
+                  if (!retry.ok) {
+                    setError(
+                      retryData.error?.message ?? "Could not commit expense.",
+                    );
+                    return;
+                  }
+                  router.refresh();
+                  return;
+                }
+              }
               setError(data.error?.message ?? "Could not commit expense.");
               return;
             }

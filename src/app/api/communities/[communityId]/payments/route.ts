@@ -12,7 +12,7 @@ import {
   confirmPaymentSubmission,
   listPendingSubmissions,
   rejectPaymentSubmission,
-  submitDemoPayment,
+  submitTrackedPayment,
 } from "@/server/services/payments";
 
 type RouteCtx = { params: Promise<{ communityId: string }> };
@@ -26,9 +26,7 @@ function mapErr(err: unknown) {
           ? 403
           : err.code === "CONFLICT" || err.code === "STALE_BALANCE"
             ? 409
-            : err.code === "NOT_IMPLEMENTED"
-              ? 501
-              : 400;
+            : 400;
     return apiError(status, err.code, err.message, err.details);
   }
   console.error(err);
@@ -75,22 +73,20 @@ export async function POST(req: Request, ctx: RouteCtx) {
         .object({
           expenseId: z.string().min(1),
           amountCents: z.number().int().positive(),
-          method: z.enum([
-            "DEMO_SIMULATE",
-            "ALIPAY_PLACEHOLDER",
-            "WALLET_PLACEHOLDER",
-          ]),
           note: z.string().nullable().optional(),
         })
         .safeParse(body);
       if (!parsed.success) {
         return apiError(400, "VALIDATION_ERROR", "Invalid submit payload.");
       }
-      const submission = await submitDemoPayment({
+
+      const submission = await submitTrackedPayment({
         communityId,
         cycleId: cycle.id,
         membershipId: member.membership.id,
-        ...parsed.data,
+        expenseId: parsed.data.expenseId,
+        amountCents: parsed.data.amountCents,
+        note: parsed.data.note,
       });
       return NextResponse.json({ submission }, { status: 201 });
     }

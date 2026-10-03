@@ -36,7 +36,7 @@ export function LoginForm({ users, nextPath }: LoginFormProps) {
       setError(data.error?.message ?? "Could not sign in.");
       return;
     }
-    router.replace(data.next ?? "/communities");
+    router.replace(data.next ?? "/profile/communities");
     router.refresh();
   }
 

@@ -198,7 +198,7 @@ function communityParentHref(
     return { href: base, label: `Back to ${communityName}` };
   }
 
-  return { href: "/communities", label: "Back to My communities" };
+  return { href: "/profile/communities", label: "Back to My communities" };
 }
 
 export function CommunityNav({

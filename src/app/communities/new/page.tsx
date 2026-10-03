@@ -18,7 +18,7 @@ export default async function CommunityActionsPage() {
         eyebrow="Communities"
         title="Create or join a community"
         description="Create a community as coordinator, or join another team with an invitation."
-        backHref="/communities"
+        backHref="/profile/communities"
         backLabel="Back to My communities"
       />
 

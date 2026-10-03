@@ -125,8 +125,13 @@ export default async function ReportPage({ params }: PageProps) {
       />
 
       <div className="no-print rounded-md border border-border bg-background px-4 py-3 text-sm text-muted">
-        Use your browser print dialog for a paper-friendly view. CSV export
-        arrives in a later phase.
+        Use your browser print dialog for a paper-friendly view.{" "}
+        <a
+          href={`/api/communities/${communityId}/report/csv`}
+          className="font-semibold text-primary underline-offset-2 hover:underline"
+        >
+          Download CSV
+        </a>
       </div>
 
       <article className="space-y-8 border border-border bg-surface p-6 print:border-0 print:p-0">

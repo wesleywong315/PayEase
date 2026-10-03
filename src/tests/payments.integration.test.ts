@@ -10,7 +10,7 @@ import { DEMO } from "../../prisma/demo-ids";
 import {
   confirmPaymentSubmission,
   getMemberPaymentRibbons,
-  submitDemoPayment,
+  submitTrackedPayment,
 } from "@/server/services/payments";
 import { getMembershipBalances } from "@/server/services/balances";
 import { getCategoryReportSlices } from "@/server/services/reports";
@@ -22,12 +22,18 @@ const prisma = new PrismaClient({ adapter });
 
 describe("payment pending → confirm (integration against seeded DB)", () => {
   beforeAll(async () => {
-    // Ensure no leftover pending from prior runs for Ben/training
+    // Reset Ben ↔ training fee so full-pay tests can re-run against the seed.
     await prisma.paymentSubmission.deleteMany({
       where: {
         membershipId: DEMO.memberships.ben,
         expenseId: DEMO.trainingExpenseId,
-        status: "PENDING_CONFIRMATION",
+      },
+    });
+    await prisma.cashTransaction.deleteMany({
+      where: {
+        membershipId: DEMO.memberships.ben,
+        expenseId: DEMO.trainingExpenseId,
+        type: "MEMBER_CONTRIBUTION",
       },
     });
   });
@@ -50,22 +56,53 @@ describe("payment pending → confirm (integration against seeded DB)", () => {
     expect(["DUE_SOON", "OVERDUE"]).toContain(training!.state);
   });
 
-  it("simulate creates pending only; confirm writes one cash tx", async () => {
+  it("record creates pending only; confirm writes one cash tx", async () => {
     const before = await getMembershipBalances([DEMO.memberships.ben]);
     const outstandingBefore =
       before.get(DEMO.memberships.ben)!.contributionOutstandingCents;
     expect(outstandingBefore).toBeGreaterThan(0);
 
-    const amount = Math.min(500, outstandingBefore);
-    const submission = await submitDemoPayment({
+    const allocation = await prisma.allocation.findUniqueOrThrow({
+      where: {
+        expenseId_membershipId: {
+          expenseId: DEMO.trainingExpenseId,
+          membershipId: DEMO.memberships.ben,
+        },
+      },
+    });
+    const paidAgg = await prisma.cashTransaction.aggregate({
+      where: {
+        membershipId: DEMO.memberships.ben,
+        expenseId: DEMO.trainingExpenseId,
+        type: "MEMBER_CONTRIBUTION",
+      },
+      _sum: { amountCents: true },
+    });
+    const remainingOnExpense = Math.max(
+      0,
+      allocation.finalChargeCents - (paidAgg._sum.amountCents ?? 0),
+    );
+    expect(remainingOnExpense).toBeGreaterThan(0);
+
+    await expect(
+      submitTrackedPayment({
+        communityId: DEMO.communityId,
+        cycleId: DEMO.cycleId,
+        membershipId: DEMO.memberships.ben,
+        expenseId: DEMO.trainingExpenseId,
+        amountCents: Math.max(1, remainingOnExpense - 1),
+      }),
+    ).rejects.toMatchObject({ code: "VALIDATION_ERROR" });
+
+    const submission = await submitTrackedPayment({
       communityId: DEMO.communityId,
       cycleId: DEMO.cycleId,
       membershipId: DEMO.memberships.ben,
       expenseId: DEMO.trainingExpenseId,
-      amountCents: amount,
-      method: "DEMO_SIMULATE",
+      amountCents: remainingOnExpense,
     });
     expect(submission.status).toBe("PENDING_CONFIRMATION");
+    expect(submission.method).toBe("TRACKED");
     expect(submission.cashTransactionId).toBeNull();
 
     const mid = await getMembershipBalances([DEMO.memberships.ben]);
@@ -79,12 +116,12 @@ describe("payment pending → confirm (integration against seeded DB)", () => {
       actorMembershipId: DEMO.memberships.alex,
     });
     expect(confirmed.submission.status).toBe("CONFIRMED");
-    expect(confirmed.cashTransaction.amountCents).toBe(amount);
+    expect(confirmed.cashTransaction.amountCents).toBe(remainingOnExpense);
     expect(confirmed.cashTransaction.type).toBe("MEMBER_CONTRIBUTION");
 
     const after = await getMembershipBalances([DEMO.memberships.ben]);
     expect(after.get(DEMO.memberships.ben)!.contributionOutstandingCents).toBe(
-      outstandingBefore - amount,
+      outstandingBefore - remainingOnExpense,
     );
 
     await expect(
@@ -104,18 +141,5 @@ describe("payment pending → confirm (integration against seeded DB)", () => {
     expect(slices.some((s) => s.label === "Training")).toBe(true);
     const training = slices.find((s) => s.label === "Training");
     expect(training!.totalCents).toBeGreaterThanOrEqual(DEMO.trainingTotalCents);
-  });
-
-  it("placeholder methods are rejected", async () => {
-    await expect(
-      submitDemoPayment({
-        communityId: DEMO.communityId,
-        cycleId: DEMO.cycleId,
-        membershipId: DEMO.memberships.chloe,
-        expenseId: DEMO.trainingExpenseId,
-        amountCents: 100,
-        method: "ALIPAY_PLACEHOLDER",
-      }),
-    ).rejects.toMatchObject({ code: "NOT_IMPLEMENTED" });
   });
 });

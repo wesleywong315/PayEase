@@ -412,3 +412,95 @@ export async function createFinancialCycle(input: {
 
   return cycle;
 }
+
+export async function closeFinancialCycle(input: {
+  communityId: string;
+  cycleId: string;
+  actorMembershipId: string;
+  acknowledgeOutstandingBalances?: boolean;
+}) {
+  const cycle = await prisma.financialCycle.findFirst({
+    where: { id: input.cycleId, communityId: input.communityId },
+  });
+  if (!cycle) {
+    throw new DomainError("NOT_FOUND", "Cycle not found.");
+  }
+  if (cycle.status !== "OPEN") {
+    throw new DomainError("CYCLE_CLOSED", "This cycle is already closed.");
+  }
+
+  const drafts = await prisma.expense.count({
+    where: { cycleId: cycle.id, status: "DRAFT" },
+  });
+  if (drafts > 0) {
+    throw new DomainError(
+      "DRAFTS_REMAIN",
+      "Commit or cancel draft expenses before closing the cycle.",
+      { draftCount: drafts },
+    );
+  }
+
+  const pendingCaps = await prisma.contributionCapRequest.count({
+    where: { cycleId: cycle.id, status: "PENDING" },
+  });
+  const proposedRules = await prisma.ruleVersion.count({
+    where: { cycleId: cycle.id, status: "PROPOSED" },
+  });
+  if (pendingCaps > 0 || proposedRules > 0) {
+    throw new DomainError(
+      "PENDING_DECISIONS_REMAIN",
+      "Finish pending PayAid requests and proposed rules before closing.",
+      { pendingCaps, proposedRules },
+    );
+  }
+
+  const members = await prisma.membership.findMany({
+    where: { communityId: input.communityId, status: "ACTIVE" },
+    select: { id: true },
+  });
+  const { getMembershipBalances } = await import("@/server/services/balances");
+  const balances = await getMembershipBalances(members.map((m) => m.id));
+  let outstanding = false;
+  for (const row of balances.values()) {
+    if (
+      row.contributionOutstandingCents > 0 ||
+      row.reimbursementOutstandingCents > 0
+    ) {
+      outstanding = true;
+      break;
+    }
+  }
+  if (outstanding && !input.acknowledgeOutstandingBalances) {
+    throw new DomainError(
+      "OUTSTANDING_ACK_REQUIRED",
+      "Some contribution or reimbursement balances are still outstanding. Acknowledge to close without settling them.",
+    );
+  }
+
+  const closed = await prisma.financialCycle.update({
+    where: { id: cycle.id },
+    data: {
+      status: "CLOSED",
+      closedAt: new Date(),
+      closeAcknowledgedOutstanding: outstanding,
+    },
+  });
+
+  await prisma.auditEvent.create({
+    data: {
+      communityId: input.communityId,
+      cycleId: cycle.id,
+      actorMembershipId: input.actorMembershipId,
+      action: "CYCLE_CLOSED",
+      entityType: "FinancialCycle",
+      entityId: cycle.id,
+      payloadJson: JSON.stringify({
+        acknowledgeOutstandingBalances: Boolean(
+          input.acknowledgeOutstandingBalances,
+        ),
+      }),
+    },
+  });
+
+  return closed;
+}

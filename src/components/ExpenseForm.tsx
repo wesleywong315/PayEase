@@ -12,12 +12,31 @@ import { parseHkdToCents } from "@/lib/money";
 type MemberOption = { id: string; displayName: string };
 type CategoryOption = { id: string; name: string };
 
+export type ExpenseFormInitial = {
+  title: string;
+  categoryId: string | null;
+  categoryLabel: string;
+  isOneTimeCategory: boolean;
+  fixedCents: number;
+  variableCents: number;
+  usageLabel: string;
+  dueAt: string | null;
+  frontedByMembershipId: string | null;
+  participants: Array<{ membershipId: string; usageUnits: number }>;
+};
+
 type ExpenseFormProps = {
   communityId: string;
   cycleRevision: number;
   members: MemberOption[];
   categories: CategoryOption[];
+  expenseId?: string;
+  initial?: ExpenseFormInitial;
 };
+
+function centsToHkdInput(cents: number): string {
+  return (cents / 100).toFixed(2);
+}
 
 function dueAtIsoFromDateInput(date: string): string {
   const d = new Date(`${date}T23:59:59`);
@@ -29,27 +48,62 @@ export function ExpenseForm({
   cycleRevision,
   members,
   categories,
+  expenseId,
+  initial,
 }: ExpenseFormProps) {
   const router = useRouter();
-  const [title, setTitle] = useState("");
-  const [categoryMode, setCategoryMode] = useState<"reuse" | "onetime">(
-    categories.length > 0 ? "reuse" : "onetime",
+  const isEdit = Boolean(expenseId);
+  const [title, setTitle] = useState(initial?.title ?? "");
+  const [categoryMode, setCategoryMode] = useState<"reuse" | "onetime">(() => {
+    if (initial?.isOneTimeCategory) return "onetime";
+    if (initial?.categoryId || categories.length > 0) return "reuse";
+    return "onetime";
+  });
+  const [categoryId, setCategoryId] = useState(
+    initial?.categoryId ?? categories[0]?.id ?? "",
   );
-  const [categoryId, setCategoryId] = useState(categories[0]?.id ?? "");
-  const [categoryLabel, setCategoryLabel] = useState("");
-  const [fixedHkd, setFixedHkd] = useState("0");
-  const [includeVariable, setIncludeVariable] = useState(false);
-  const [variableHkd, setVariableHkd] = useState("0");
-  const [usageLabel, setUsageLabel] = useState("Usage units");
-  const [dueDate, setDueDate] = useState("");
+  const [categoryLabel, setCategoryLabel] = useState(
+    initial?.isOneTimeCategory ? (initial.categoryLabel ?? "") : "",
+  );
+  const [fixedHkd, setFixedHkd] = useState(
+    initial ? centsToHkdInput(initial.fixedCents) : "0",
+  );
+  const [includeVariable, setIncludeVariable] = useState(
+    (initial?.variableCents ?? 0) > 0,
+  );
+  const [variableHkd, setVariableHkd] = useState(
+    initial && initial.variableCents > 0
+      ? centsToHkdInput(initial.variableCents)
+      : "0",
+  );
+  const [usageLabel, setUsageLabel] = useState(
+    initial?.usageLabel ?? "Usage units",
+  );
+  const [dueDate, setDueDate] = useState(() => {
+    if (!initial?.dueAt) return "";
+    return initial.dueAt.slice(0, 10);
+  });
+  const [frontedByMembershipId, setFrontedByMembershipId] = useState(
+    initial?.frontedByMembershipId ?? "",
+  );
   const [selected, setSelected] = useState<Record<string, boolean>>(() => {
     const init: Record<string, boolean> = {};
-    for (const m of members) init[m.id] = true;
+    const selectedIds = initial
+      ? new Set(initial.participants.map((p) => p.membershipId))
+      : null;
+    for (const m of members) {
+      init[m.id] = selectedIds ? selectedIds.has(m.id) : true;
+    }
     return init;
   });
   const [usageUnits, setUsageUnits] = useState<Record<string, string>>(() => {
     const init: Record<string, string> = {};
-    for (const m of members) init[m.id] = "0";
+    const byId = new Map(
+      (initial?.participants ?? []).map((p) => [p.membershipId, p.usageUnits]),
+    );
+    for (const m of members) {
+      init[m.id] = String(byId.get(m.id) ?? 0);
+    }
     return init;
   });
   const [previewRows, setPreviewRows] = useState<AllocationPreviewRow[]>([]);
@@ -101,7 +155,7 @@ export function ExpenseForm({
         variableCents,
         usageLabel: includeVariable ? usageLabel.trim() : "Usage units",
         dueAt: dueAtIsoFromDateInput(dueDate),
-        frontedByMembershipId: null,
+        frontedByMembershipId: frontedByMembershipId || null,
         participants,
         cycleRevision,
         previewOnly,
@@ -117,6 +171,7 @@ export function ExpenseForm({
       variableHkd,
       usageLabel,
       dueDate,
+      frontedByMembershipId,
       participants,
       cycleRevision,
     ],
@@ -202,20 +257,25 @@ export function ExpenseForm({
         startTransition(async () => {
           try {
             const payload = buildPayload(false);
-            const response = await fetch(
-              `/api/communities/${communityId}/expenses`,
-              {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify(payload),
-              },
-            );
+            const url = expenseId
+              ? `/api/communities/${communityId}/expenses/${expenseId}`
+              : `/api/communities/${communityId}/expenses`;
+            const response = await fetch(url, {
+              method: expenseId ? "PATCH" : "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify(payload),
+            });
             const data = (await response.json()) as {
               expense?: { id: string };
               error?: { message?: string };
             };
             if (!response.ok || !data.expense) {
-              setError(data.error?.message ?? "Could not save draft expense.");
+              setError(
+                data.error?.message ??
+                  (expenseId
+                    ? "Could not update draft expense."
+                    : "Could not save draft expense."),
+              );
               return;
             }
             router.push(
@@ -224,7 +284,11 @@ export function ExpenseForm({
             router.refresh();
           } catch (err) {
             setError(
-              err instanceof Error ? err.message : "Could not save draft expense.",
+              err instanceof Error
+                ? err.message
+                : expenseId
+                  ? "Could not update draft expense."
+                  : "Could not save draft expense.",
             );
           }
         });
@@ -447,6 +511,29 @@ export function ExpenseForm({
         />
       </div>
 
+      <div className="space-y-2">
+        <label htmlFor="fronted-by" className="type-caption font-semibold text-ink">
+          Fronted by (optional)
+        </label>
+        <select
+          id="fronted-by"
+          value={frontedByMembershipId}
+          onChange={(e) => setFrontedByMembershipId(e.target.value)}
+          className="focus-ring w-full rounded-xl border border-border bg-canvas px-4 py-3 text-sm text-ink sm:max-w-xs"
+        >
+          <option value="">Not fronted — supplier paid from pool later</option>
+          {members.map((member) => (
+            <option key={member.id} value={member.id}>
+              {member.displayName}
+            </option>
+          ))}
+        </select>
+        <p className="type-caption">
+          If a member paid the supplier, they can be reimbursed from treasurer
+          cash after the expense is committed.
+        </p>
+      </div>
+
       <fieldset className="space-y-3">
         <legend className="type-caption font-semibold text-ink">
           Participants
@@ -498,7 +585,7 @@ export function ExpenseForm({
         disabled={pending}
         className="focus-ring rounded-full bg-primary px-5 py-2.5 text-sm font-semibold text-white disabled:opacity-60"
       >
-        {pending ? "Saving…" : "Save draft"}
+        {pending ? "Saving…" : isEdit ? "Save changes" : "Save draft"}
       </button>
     </form>
   );

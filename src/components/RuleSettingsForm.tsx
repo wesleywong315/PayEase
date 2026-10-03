@@ -84,17 +84,17 @@ export function RuleSettingsForm({ communityId, initial }: RuleSettingsFormProps
             error?: { message?: string };
           };
           if (!response.ok) {
-            setError(data.error?.message ?? "Could not save rule version.");
+            setError(data.error?.message ?? "Could not propose rule version.");
             return;
           }
           router.refresh();
         });
       }}
     >
-      <h2 className="type-h3">New accepted rule version</h2>
+      <h2 className="type-h3">Propose a new rule version</h2>
       <p className="type-caption">
-        Creates a new accepted version immediately (demo shortcut). Feature
-        toggles and budget cap never rewrite prior committed history.
+        Active members at propose time must each accept before this version
+        becomes binding. Feature toggles never rewrite committed history.
       </p>
 
       <div className="space-y-2">
@@ -194,7 +194,7 @@ export function RuleSettingsForm({ communityId, initial }: RuleSettingsFormProps
         disabled={pending}
         className="focus-ring rounded-full bg-primary px-5 py-2.5 text-sm font-semibold text-white disabled:opacity-60"
       >
-        {pending ? "Saving…" : "Publish accepted version"}
+        {pending ? "Proposing…" : "Propose version"}
       </button>
     </form>
   );

@@ -13,6 +13,7 @@ import { getCommunityOrNotFound, getOpenCycle } from "@/lib/community";
 import { prisma } from "@/lib/db";
 import { getSessionUser } from "@/server/auth/current-user";
 import { getActiveMembership } from "@/server/auth/permissions";
+import { getTreasurerCashCents } from "@/server/services/ledger";
 import { getCoordinatorReceivables } from "@/server/services/receivables";
 
 export const dynamic = "force-dynamic";
@@ -26,26 +27,14 @@ const CASH_IN = new Set([
   "CREDIT_RECEIPT",
   "MEMBER_CONTRIBUTION",
 ]);
-const CASH_OUT = new Set(["PAYER_REIMBURSEMENT", "MEMBER_REFUND"]);
+const CASH_OUT = new Set(["PAYER_REIMBURSEMENT"]);
 
 const CASH_TYPE_LABEL: Record<string, string> = {
   HARDSHIP_FUNDING_RECEIPT: "PayAid funding in",
   CREDIT_RECEIPT: "Credits / grants",
   MEMBER_CONTRIBUTION: "Member contributions",
   PAYER_REIMBURSEMENT: "Payer reimbursements",
-  MEMBER_REFUND: "Member refunds",
 };
-
-function treasurerCashApprox(
-  txs: { type: string; amountCents: number }[],
-): number {
-  let total = 0;
-  for (const tx of txs) {
-    if (CASH_IN.has(tx.type)) total += tx.amountCents;
-    else if (CASH_OUT.has(tx.type)) total -= tx.amountCents;
-  }
-  return total;
-}
 
 function formatCycleWindow(endsAt: Date | string | null | undefined): string {
   if (endsAt == null) return "End date not set";
@@ -183,7 +172,7 @@ export default async function CommunityDashboardPage({ params }: PageProps) {
     0,
   );
   const fundingInTotal = payAidReceived + creditsReceived;
-  const cashApprox = treasurerCashApprox(cashTxs);
+  const cashApprox = await getTreasurerCashCents(openCycle.id);
 
   const cashByType = new Map<string, number>();
   for (const tx of cashTxs) {

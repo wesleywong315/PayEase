@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { CloseCycleButton } from "@/components/CloseCycleButton";
 import { EmptyState } from "@/components/EmptyState";
 import { PageHeader } from "@/components/PageHeader";
 import { getCommunityOrNotFound, getOpenCycle } from "@/lib/community";
@@ -77,7 +78,7 @@ export default async function CommunityHubPage({ params }: PageProps) {
     });
   }
 
-  if (isMember) {
+  if (isMember && toggles.contributionsEnabled) {
     links.push({
       href: `${base}/payments`,
       title: "My payments",
@@ -93,6 +94,10 @@ export default async function CommunityHubPage({ params }: PageProps) {
         title="Community"
         description="Rules, withdrawals, updates, and other community tools."
       />
+
+      {isCoordinator && openCycle ? (
+        <CloseCycleButton communityId={communityId} />
+      ) : null}
 
       {links.length === 0 ? (
         <EmptyState
