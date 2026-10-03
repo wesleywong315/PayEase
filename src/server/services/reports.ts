@@ -10,6 +10,7 @@ export type SettlementMemberRow = {
   displayName: string;
   baselineCents: number;
   hardshipAppliedCents: number;
+  equalCoverAppliedCents: number;
   finalChargeCents: number;
   contributionOutstandingCents: number;
   reimbursementOutstandingCents: number;
@@ -44,21 +45,24 @@ export async function getSettlementRows(input: {
       membershipId: true,
       baselineCents: true,
       hardshipAppliedCents: true,
+      equalCoverAppliedCents: true,
       finalChargeCents: true,
     },
   });
   const byMember = new Map<
     string,
-    { baselineCents: number; hardshipAppliedCents: number; finalChargeCents: number }
+    { baselineCents: number; hardshipAppliedCents: number; equalCoverAppliedCents: number; finalChargeCents: number }
   >();
   for (const row of allocations) {
     const existing = byMember.get(row.membershipId) ?? {
       baselineCents: 0,
       hardshipAppliedCents: 0,
+      equalCoverAppliedCents: 0,
       finalChargeCents: 0,
     };
     existing.baselineCents += row.baselineCents;
     existing.hardshipAppliedCents += row.hardshipAppliedCents;
+    existing.equalCoverAppliedCents += row.equalCoverAppliedCents;
     existing.finalChargeCents += row.finalChargeCents;
     byMember.set(row.membershipId, existing);
   }
@@ -71,6 +75,7 @@ export async function getSettlementRows(input: {
       displayName: m.user.displayName,
       baselineCents: alloc?.baselineCents ?? 0,
       hardshipAppliedCents: alloc?.hardshipAppliedCents ?? 0,
+      equalCoverAppliedCents: alloc?.equalCoverAppliedCents ?? 0,
       finalChargeCents: alloc?.finalChargeCents ?? 0,
       contributionOutstandingCents: bal?.contributionOutstandingCents ?? 0,
       reimbursementOutstandingCents: bal?.reimbursementOutstandingCents ?? 0,
@@ -102,6 +107,7 @@ export function settlementRowsToCsv(
     "Member",
     "Baseline_cents",
     "PayAid_applied_cents",
+    "Equal_cover_applied_cents",
     "Final_charge_cents",
     "Contribution_outstanding_cents",
     "Reimbursement_outstanding_cents",
@@ -114,6 +120,7 @@ export function settlementRowsToCsv(
         escapeCsvCell(row.displayName),
         String(row.baselineCents),
         String(row.hardshipAppliedCents),
+        String(row.equalCoverAppliedCents),
         String(row.finalChargeCents),
         String(row.contributionOutstandingCents),
         String(row.reimbursementOutstandingCents),

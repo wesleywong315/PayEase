@@ -125,6 +125,7 @@ model Membership {
   hardshipAwardsReceived  HardshipAward[]        @relation("AwardRecipient")
   hardshipAwardsApproved  HardshipAward[]        @relation("AwardApprover")
   creditsRecorded         Credit[]               @relation("CreditRecorder")
+  equalCoverBalances      MembershipEqualCover[]
   cashTransactionsAsParty CashTransaction[]      @relation("CashParty")
   cashTransactionsRecorded CashTransaction[]     @relation("CashRecorder")
   withdrawals             Withdrawal[]           @relation("WithdrawnMember")
@@ -157,6 +158,7 @@ model FinancialCycle {
   hardshipFundings        HardshipFunding[]
   hardshipAwards          HardshipAward[]
   credits                 Credit[]
+  equalCoverBalances      MembershipEqualCover[]
   cashTransactions        CashTransaction[]
   withdrawals             Withdrawal[]
   auditEvents             AuditEvent[]
@@ -239,6 +241,9 @@ model Credit {
   categoryId             String?
   isOneTimeCategory      Boolean  @default(false)
   amountCents            Int
+  equalCoverCents        Int      @default(0)
+  payAidCents            Int      @default(0)
+  unallocatedRemainderCents Int   @default(0)
   note                   String?
   receivedAt             DateTime @default(now())
   recordedByMembershipId String
@@ -250,6 +255,7 @@ model Credit {
   creditCategory  CreditCategory? @relation(fields: [categoryId], references: [id])
   recordedBy      Membership      @relation("CreditRecorder", fields: [recordedByMembershipId], references: [id])
   cashTransaction CashTransaction? @relation("CreditCashLink", fields: [cashTransactionId], references: [id])
+  payAidFunding   HardshipFunding? @relation("CreditPayAidSlice")
 }
 
 model Expense {
@@ -309,6 +315,7 @@ model Allocation {
   usageShareCents      Int
   baselineCents        Int
   hardshipAppliedCents Int    @default(0)
+  equalCoverAppliedCents Int  @default(0)
   finalChargeCents     Int
 
   expense    Expense    @relation(fields: [expenseId], references: [id])
@@ -335,6 +342,18 @@ model ContributionCapRequest {
   hardshipAward HardshipAward?
 }
 
+model MembershipEqualCover {
+  id              String @id @default(cuid())
+  cycleId         String
+  membershipId    String
+  remainingCents  Int    @default(0)
+
+  cycle      FinancialCycle @relation(fields: [cycleId], references: [id])
+  membership Membership     @relation(fields: [membershipId], references: [id])
+
+  @@unique([cycleId, membershipId])
+}
+
 model HardshipFunding {
   id                     String              @id @default(cuid())
   cycleId                String
@@ -343,11 +362,13 @@ model HardshipFunding {
   note                   String?
   recordedByMembershipId String
   cashTransactionId      String?             @unique
+  creditId               String?             @unique
   createdAt              DateTime            @default(now())
 
   cycle           FinancialCycle   @relation(fields: [cycleId], references: [id])
   recordedBy      Membership       @relation("FundingRecorder", fields: [recordedByMembershipId], references: [id])
   cashTransaction CashTransaction? @relation("FundingCashLink", fields: [cashTransactionId], references: [id])
+  credit          Credit?          @relation("CreditPayAidSlice", fields: [creditId], references: [id])
 }
 
 model HardshipAward {

@@ -15,7 +15,7 @@ export async function recordPayAidFunding(input: {
   cycleId: string;
   actorMembershipId: string;
   amountCents: number;
-  kind: "RECEIVED" | "PLEDGED";
+  kind?: "RECEIVED";
   note?: string | null;
   idempotencyKey: string;
 }) {
@@ -48,25 +48,23 @@ export async function recordPayAidFunding(input: {
     }
 
     let cashId: string | null = null;
-    if (input.kind === "RECEIVED") {
-      const cash = await tx.cashTransaction.create({
-        data: {
-          cycleId: input.cycleId,
-          type: "HARDSHIP_FUNDING_RECEIPT",
-          amountCents: input.amountCents,
-          idempotencyKey: key,
-          note: input.note?.trim() || "PayAid funding received",
-          manuallyConfirmed: true,
-          recordedByMembershipId: input.actorMembershipId,
-        },
-      });
-      cashId = cash.id;
-    }
+    const cash = await tx.cashTransaction.create({
+      data: {
+        cycleId: input.cycleId,
+        type: "HARDSHIP_FUNDING_RECEIPT",
+        amountCents: input.amountCents,
+        idempotencyKey: key,
+        note: input.note?.trim() || "PayAid funding received",
+        manuallyConfirmed: true,
+        recordedByMembershipId: input.actorMembershipId,
+      },
+    });
+    cashId = cash.id;
 
     const funding = await tx.hardshipFunding.create({
       data: {
         cycleId: input.cycleId,
-        kind: input.kind,
+        kind: "RECEIVED",
         amountCents: input.amountCents,
         note: input.note?.trim() || null,
         recordedByMembershipId: input.actorMembershipId,
@@ -88,7 +86,7 @@ export async function recordPayAidFunding(input: {
         entityType: "HardshipFunding",
         entityId: funding.id,
         payloadJson: JSON.stringify({
-          kind: input.kind,
+          kind: "RECEIVED",
           amountCents: input.amountCents,
         }),
       },
@@ -282,7 +280,8 @@ export async function decideContributionCapRequest(input: {
         if (room <= 0) continue;
         const apply = Math.min(remaining, room);
         const hardshipAppliedCents = row.hardshipAppliedCents + apply;
-        const finalChargeCents = row.baselineCents - hardshipAppliedCents;
+        const finalChargeCents =
+          row.baselineCents - hardshipAppliedCents - row.equalCoverAppliedCents;
         if (finalChargeCents < 0) {
           throw new DomainError("CONFLICT", "Award would drive a final charge negative.");
         }

@@ -26,6 +26,7 @@ export function CreditForm({ communityId, categories }: CreditFormProps) {
   const [categoryId, setCategoryId] = useState(categories[0]?.id ?? "");
   const [categoryLabel, setCategoryLabel] = useState("");
   const [amountHkd, setAmountHkd] = useState("");
+  const [payAidHkd, setPayAidHkd] = useState("0");
   const [note, setNote] = useState("");
   const [receivedDate, setReceivedDate] = useState(() =>
     new Date().toISOString().slice(0, 10),
@@ -45,6 +46,14 @@ export function CreditForm({ communityId, categories }: CreditFormProps) {
             if (amountCents === null || amountCents <= 0) {
               throw new Error("Enter a valid positive HKD amount.");
             }
+            const payAidCents = parseHkdToCents(payAidHkd);
+            if (payAidCents === null || payAidCents < 0) {
+              throw new Error("Enter a valid PayAid amount (0 is allowed).");
+            }
+            if (payAidCents > amountCents) {
+              throw new Error("PayAid slice cannot exceed the credit amount.");
+            }
+            const equalCoverCents = amountCents - payAidCents;
             if (!title.trim()) {
               throw new Error("Enter a title.");
             }
@@ -70,6 +79,8 @@ export function CreditForm({ communityId, categories }: CreditFormProps) {
                   categoryLabel: isOneTime ? categoryLabel : "",
                   isOneTimeCategory: isOneTime,
                   amountCents,
+                  equalCoverCents,
+                  payAidCents,
                   note: note.trim() || null,
                   receivedAt: receivedAtIsoFromDateInput(receivedDate),
                   idempotencyKey: `credit:${crypto.randomUUID()}`,
@@ -171,6 +182,25 @@ export function CreditForm({ communityId, categories }: CreditFormProps) {
           inputMode="decimal"
           value={amountHkd}
           onChange={(e) => setAmountHkd(e.target.value)}
+          placeholder="0.00"
+          className="focus-ring w-full rounded-xl border border-border bg-canvas px-4 py-2.5 text-sm text-ink"
+        />
+      </div>
+
+      <div className="space-y-2">
+        <label htmlFor="credit-payaid" className="text-sm font-semibold text-ink">
+          Of which PayAid (HKD)
+        </label>
+        <p className="type-caption">
+          Remainder is split equally among members active at record time. This
+          split cannot be changed later.
+        </p>
+        <input
+          id="credit-payaid"
+          required
+          inputMode="decimal"
+          value={payAidHkd}
+          onChange={(e) => setPayAidHkd(e.target.value)}
           placeholder="0.00"
           className="focus-ring w-full rounded-xl border border-border bg-canvas px-4 py-2.5 text-sm text-ink"
         />

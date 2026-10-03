@@ -11,6 +11,7 @@ export type ReceivableMember = {
   contributionOutstandingCents: number;
   reimbursementOutstandingCents: number;
   refundDueCents: number;
+  unusedEqualCoverCents: number;
   charges: Array<{
     expenseId: string;
     title: string;
@@ -81,6 +82,16 @@ export function CoordinatorReceivablesPanel({ members }: Props) {
               <div className="overflow-hidden">
                 {expanded ? (
                   <div className="space-y-2 border-t border-border bg-canvas/60 px-3 py-2">
+                    {member.unusedEqualCoverCents > 0 ? (
+                      <p className="type-caption">
+                        Unused equal-cover credit{" "}
+                        <MoneyText
+                          cents={member.unusedEqualCoverCents}
+                          className="inline font-semibold text-ink"
+                        />
+                        . Applies when this member has committed charges.
+                      </p>
+                    ) : null}
                     {member.charges.length === 0 ? (
                       <p className="type-caption">
                         No committed charges in this cycle.

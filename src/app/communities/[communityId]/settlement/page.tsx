@@ -91,6 +91,9 @@ export default async function SettlementPage({ params }: PageProps) {
                   PayAid applied
                 </th>
                 <th scope="col" className="px-4 py-3 font-semibold">
+                  Equal cover
+                </th>
+                <th scope="col" className="px-4 py-3 font-semibold">
                   Final charge
                 </th>
                 <th scope="col" className="px-4 py-3 font-semibold">
@@ -115,6 +118,9 @@ export default async function SettlementPage({ params }: PageProps) {
                   </td>
                   <td className="px-4 py-3">
                     <MoneyText cents={row.hardshipAppliedCents} />
+                  </td>
+                  <td className="px-4 py-3">
+                    <MoneyText cents={row.equalCoverAppliedCents} />
                   </td>
                   <td className="px-4 py-3 font-semibold">
                     <MoneyText cents={row.finalChargeCents} />

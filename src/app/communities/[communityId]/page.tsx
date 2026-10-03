@@ -109,7 +109,7 @@ export default async function CommunityDashboardPage({ params }: PageProps) {
       orderBy: { committedAt: "asc" },
     }),
     prisma.hardshipFunding.findMany({
-      where: { cycleId: openCycle.id, kind: "RECEIVED" },
+      where: { cycleId: openCycle.id, kind: "RECEIVED", cashTransactionId: { not: null } },
       select: {
         id: true,
         amountCents: true,
